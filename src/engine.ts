@@ -9,6 +9,7 @@ import { goalKey, loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
+import { postStandings } from "./standings.ts";
 import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
 
 export async function ratingsNow() {
@@ -29,6 +30,7 @@ export async function postDailyMenu(date: string): Promise<void> {
   const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];
   const champ = championForecast(table, teams);
   await sendMessage(fmtDailyMenu(date, today, preds, recent, champ, await topScorers()));
+  await postStandings();
 }
 
 export async function postPrematch(e: WcEvent): Promise<void> {
