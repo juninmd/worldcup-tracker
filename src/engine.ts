@@ -9,7 +9,7 @@ import { goalKey, loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
-import { eventDetail, eventStats, lineup } from "./sportsdb.ts";
+import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
 
 export async function ratingsNow() {
   const all = await seasonEvents();
@@ -53,10 +53,25 @@ export async function postFulltime(e: WcEvent): Promise<void> {
   await postDetails(ev);
 }
 
+const utcDay = (offset: number): string =>
+  new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+
+/** Merge season feed with today's/yesterday's day feed (which carries live
+ *  status) so in-progress matches are tracked even before they hit the season feed. */
+async function trackedEvents(): Promise<WcEvent[]> {
+  const [season, today, yest] = await Promise.all([
+    seasonEvents(), eventsByDay(utcDay(0)), eventsByDay(utcDay(-1)),
+  ]);
+  const map = new Map<string, WcEvent>();
+  for (const e of season) map.set(e.idEvent, e);
+  for (const e of [...yest, ...today]) map.set(e.idEvent, e); // day feed wins (live status)
+  return [...map.values()];
+}
+
 /** One polling pass over live matches: prematch, goals, full-time. */
 export async function pollOnce(): Promise<number> {
   const state = await loadState();
-  const all = await seasonEvents();
+  const all = await trackedEvents();
   let live = 0;
 
   for (const e of all) {

@@ -22,6 +22,15 @@ export async function eventsOnDate(date: string): Promise<WcEvent[]> {
   return all.filter((e) => e.dateEvent === date);
 }
 
+/** Events for a calendar day via the day feed — includes LIVE status (1H/HT/2H)
+ *  for matches not yet present in the season feed. */
+export async function eventsByDay(date: string): Promise<WcEvent[]> {
+  const d = await get<{ events: WcEvent[] | null }>(
+    `/eventsday.php?d=${date}&l=${config.leagueId}`,
+  );
+  return d.events ?? [];
+}
+
 /** Full event record (lookupevent) — richer than the season feed. */
 export async function eventDetail(idEvent: string): Promise<WcEvent | null> {
   const d = await get<{ events: WcEvent[] | null }>(`/lookupevent.php?id=${idEvent}`);
