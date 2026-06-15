@@ -1,0 +1,19 @@
+{
+  "name": "worldcup-tracker",
+  "version": "1.0.0",
+  "description": "Real-time FIFA World Cup tracker: live Telegram updates, score predictions (Elo+Poisson), goal alerts with player info, prediction-vs-reality recap.",
+  "type": "module",
+  "module": "src/cli.ts",
+  "scripts": {
+    "menu": "bun run src/cli.ts menu",
+    "track": "bun run src/cli.ts track",
+    "predict": "bun run src/cli.ts predict",
+    "champion": "bun run src/cli.ts champion",
+    "homologate": "bun run src/cli.ts homologate",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

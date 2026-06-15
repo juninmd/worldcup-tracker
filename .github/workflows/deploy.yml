@@ -1,0 +1,17 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  docker:
+    permissions:
+      contents: read
+      packages: write
+    uses: juninmd/base-actions/.github/workflows/reusable-docker-build.yml@main
+    with:
+      image-name: ${{ github.repository }}
+    secrets:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
