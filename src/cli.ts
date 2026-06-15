@@ -4,6 +4,8 @@ import { postDailyMenu, ratingsNow, replayDate, trackForever } from "./engine.ts
 import { seasonEvents } from "./sportsdb.ts";
 import { fmtScorers, postTopScorers, topScorers } from "./scorers.ts";
 import { postDetails } from "./details.ts";
+import { fmtStandings, fmtKnockout, postStandings, postKnockout } from "./standings.ts";
+import { leagueTable } from "./sportsdb.ts";
 
 function todayBRT(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -46,6 +48,18 @@ switch (cmd) {
     console.log(`Details sent: ${e.strEvent}`);
     break;
   }
+  case "standings":
+  case "tabela": {
+    if (rest[0] === "--send") { await postStandings(); console.log("Standings sent."); break; }
+    console.log(fmtStandings(await leagueTable()));
+    break;
+  }
+  case "bracket":
+  case "mata-mata": {
+    if (rest[0] === "--send") { await postKnockout(); console.log("Knockout sent."); break; }
+    console.log(await fmtKnockout());
+    break;
+  }
   case "champion": {
     const { table, all } = await ratingsNow();
     const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];
@@ -54,6 +68,6 @@ switch (cmd) {
     break;
   }
   default:
-    console.log("commands: menu [date] | track | homologate [date] | predict <H> <A> | champion | scorers [--send] | details <team>");
+    console.log("commands: menu [date] | track | homologate [date] | predict <H> <A> | champion | scorers [--send] | details <team> | standings [--send] | bracket [--send]");
     console.log("season events:", (await seasonEvents()).length);
 }

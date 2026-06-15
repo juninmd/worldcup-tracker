@@ -1,5 +1,5 @@
 import { config } from "./config.ts";
-import type { WcEvent, TimelineItem, Player, LineupPlayer, EventStat } from "./types.ts";
+import type { WcEvent, TimelineItem, Player, LineupPlayer, EventStat, TableRow } from "./types.ts";
 
 const base = () => `https://www.thesportsdb.com/api/v1/json/${config.sportsdbKey}`;
 
@@ -20,6 +20,14 @@ export async function seasonEvents(): Promise<WcEvent[]> {
 export async function eventsOnDate(date: string): Promise<WcEvent[]> {
   const all = await seasonEvents();
   return all.filter((e) => e.dateEvent === date);
+}
+
+/** Group-stage standings table (per-team points, GD, group). */
+export async function leagueTable(): Promise<TableRow[]> {
+  const d = await get<{ table: TableRow[] | null }>(
+    `/lookuptable.php?l=${config.leagueId}&s=${config.season}`,
+  );
+  return d.table ?? [];
 }
 
 /** Events for a calendar day via the day feed — includes LIVE status (1H/HT/2H)

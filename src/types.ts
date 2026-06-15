@@ -1,3 +1,17 @@
+export interface TableRow {
+  intRank: string | null;
+  strTeam: string;
+  strGroup: string | null;
+  intPlayed: string | null;
+  intWin: string | null;
+  intDraw: string | null;
+  intLoss: string | null;
+  intGoalsFor: string | null;
+  intGoalsAgainst: string | null;
+  intGoalDifference: string | null;
+  intPoints: string | null;
+}
+
 export interface WcEvent {
   idEvent: string;
   strEvent: string;
