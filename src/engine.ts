@@ -27,12 +27,22 @@ const onlyGoals = (tl: TimelineItem[]) =>
 
 export async function postDailyMenu(date: string): Promise<void> {
   const { all, table } = await ratingsNow();
-  const today = all.filter((e) => e.dateEvent === date);
+  // The free-tier season feed lags the real schedule (often days behind), so the
+  // day feed is the source of truth for "what's on today" — it also carries live
+  // status and event artwork. Merge both, day feed winning on conflicts.
+  const dayFeed = await eventsByDay(date);
+  const todayMap = new Map<string, WcEvent>();
+  for (const e of all.filter((e) => e.dateEvent === date)) todayMap.set(e.idEvent, e);
+  for (const e of dayFeed) todayMap.set(e.idEvent, e);
+  const today = [...todayMap.values()]
+    .sort((a, b) => (a.strTimestamp ?? "").localeCompare(b.strTimestamp ?? ""));
   const preds = new Map(today.map((e) => [e.idEvent, predictMatch(table, e.strHomeTeam, e.strAwayTeam)]));
   const recent = all.filter(isFinished)
     .sort((a, b) => (b.strTimestamp ?? "").localeCompare(a.strTimestamp ?? ""));
   const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];
   const champ = championForecast(table, teams);
+  const cover = today.map(eventCover).find(Boolean);
+  if (cover) await sendPhoto(cover, `📅 Jogos de hoje — ${date}`);
   await sendMessage(fmtDailyMenu(date, today, preds, recent, champ, await topScorers()));
   await postStandings();
 }

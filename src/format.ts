@@ -3,10 +3,21 @@ import type { ChampionOdds } from "./champion.ts";
 import type { Scorer } from "./scorers.ts";
 
 const FLAGS: Record<string, string> = {
-  Brazil: "🇧🇷", Argentina: "🇦🇷", France: "🇫🇷", Spain: "🇪🇸", England: "🏴",
+  Brazil: "🇧🇷", Argentina: "🇦🇷", France: "🇫🇷", Spain: "🇪🇸", England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
   Portugal: "🇵🇹", Germany: "🇩🇪", Netherlands: "🇳🇱", Morocco: "🇲🇦", USA: "🇺🇸",
   Mexico: "🇲🇽", Paraguay: "🇵🇾", Belgium: "🇧🇪", Egypt: "🇪🇬", Croatia: "🇭🇷",
   Uruguay: "🇺🇾", Japan: "🇯🇵", Norway: "🇳🇴",
+  // Rest of the WC2026 field + likely qualifiers (feed names → emoji flag).
+  Iran: "🇮🇷", "New Zealand": "🇳🇿", Iraq: "🇮🇶", Senegal: "🇸🇳", Canada: "🇨🇦",
+  Italy: "🇮🇹", Switzerland: "🇨🇭", Denmark: "🇩🇰", Poland: "🇵🇱", Serbia: "🇷🇸",
+  Sweden: "🇸🇪", Austria: "🇦🇹", Ukraine: "🇺🇦", Turkey: "🇹🇷", Türkiye: "🇹🇷",
+  "Czech Republic": "🇨🇿", Czechia: "🇨🇿", Scotland: "🏴󠁧󠁢󠁳󠁣󠁴󠁿", Wales: "🏴󠁧󠁢󠁷󠁬󠁳󠁿",
+  Ghana: "🇬🇭", Nigeria: "🇳🇬", Cameroon: "🇨🇲", "Ivory Coast": "🇨🇮", "Côte d'Ivoire": "🇨🇮",
+  Algeria: "🇩🇿", Tunisia: "🇹🇳", "South Africa": "🇿🇦", "Cape Verde": "🇨🇻",
+  "South Korea": "🇰🇷", "Korea Republic": "🇰🇷", "Saudi Arabia": "🇸🇦", Qatar: "🇶🇦",
+  Australia: "🇦🇺", Jordan: "🇯🇴", Uzbekistan: "🇺🇿", Colombia: "🇨🇴", Chile: "🇨🇱",
+  Peru: "🇵🇪", Ecuador: "🇪🇨", Venezuela: "🇻🇪", Bolivia: "🇧🇴", "Costa Rica": "🇨🇷",
+  Panama: "🇵🇦", Jamaica: "🇯🇲", Honduras: "🇭🇳", Haiti: "🇭🇹", "Curaçao": "🇨🇼",
 };
 export const flag = (t: string) => FLAGS[t] ?? "⚽";
 const pct = (p: number) => `${Math.round(p * 100)}%`;
