@@ -3,12 +3,13 @@ import { eventsOnDate, findPlayer, isFinished, isLive, seasonEvents, timeline } 
 import { trainRatings, outcomeOf } from "./elo.ts";
 import { predictMatch } from "./predict.ts";
 import { championForecast } from "./champion.ts";
-import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch } from "./format.ts";
+import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, fmtScoreGoal } from "./format.ts";
 import { sendMessage, sendPhoto } from "./telegram.ts";
 import { goalKey, loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
+import { fallbackGoals } from "./flashscore.ts";
 import { postStandings } from "./standings.ts";
 import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
 
@@ -51,7 +52,9 @@ export async function postFulltime(e: WcEvent): Promise<void> {
   const { table } = await ratingsNow();
   const ev = (await eventDetail(e.idEvent)) ?? e;
   const pred = predictMatch(table, ev.strHomeTeam, ev.strAwayTeam);
-  await sendMessage(fmtFulltime(ev, pred, onlyGoals(await timeline(ev.idEvent))));
+  let goals = onlyGoals(await timeline(ev.idEvent));
+  if (!goals.length) goals = await fallbackGoals(ev);
+  await sendMessage(fmtFulltime(ev, pred, goals));
   await postDetails(ev);
 }
 
@@ -70,6 +73,46 @@ async function trackedEvents(): Promise<WcEvent[]> {
   return [...map.values()];
 }
 
+/** Announce any goals in the timeline not yet posted. Runs for live AND
+ *  finished matches so late goals the API only publishes at full-time are
+ *  not lost when the match flips FT between polls. */
+async function catchUpGoals(e: WcEvent, state: Awaited<ReturnType<typeof loadState>>): Promise<void> {
+  const ev = (await eventDetail(e.idEvent)) ?? e;
+  let goals = onlyGoals(await timeline(e.idEvent))
+    .sort((a, b) => Number(a.intTime) - Number(b.intTime));
+  if (!goals.length) goals = await fallbackGoals(ev); // free key: no timeline → Flashscore
+  if (goals.length) {
+    let h = 0, a = 0;
+    for (const g of goals) {
+      const home = g.strHome === "yes" || g.strTeam === e.strHomeTeam;
+      if (home) h++; else a++;
+      const key = goalKey(e.idEvent, g.intTime, g.strPlayer);
+      if (!state.postedGoals.includes(key)) {
+        await announceGoal(ev, g, `${h} x ${a}`);
+        state.postedGoals.push(key);
+      }
+    }
+    return;
+  }
+  await catchUpFromScore(ev, state); // free key: no timeline → derive from score
+}
+
+/** Fallback when the timeline feed is empty: announce one alert per goal
+ *  inferred from the score delta. Scorer/order unknown — home goals first. */
+async function catchUpFromScore(e: WcEvent, state: Awaited<ReturnType<typeof loadState>>): Promise<void> {
+  const sh = Number(e.intHomeScore), sa = Number(e.intAwayScore);
+  if (!Number.isFinite(sh) || !Number.isFinite(sa)) return;
+  let h = 0, a = 0;
+  const fire = async (team: string, side: "H" | "A", n: number) => {
+    const key = `${e.idEvent}:score:${side}${n}`;
+    if (state.postedGoals.includes(key)) return;
+    await sendMessage(fmtScoreGoal(e, team, `${h} x ${a}`));
+    state.postedGoals.push(key);
+  };
+  for (let n = 1; n <= sh; n++) { h++; await fire(e.strHomeTeam, "H", n); }
+  for (let n = 1; n <= sa; n++) { a++; await fire(e.strAwayTeam, "A", n); }
+}
+
 /** One polling pass over live matches: prematch, goals, full-time. */
 export async function pollOnce(): Promise<number> {
   const state = await loadState();
@@ -83,22 +126,11 @@ export async function pollOnce(): Promise<number> {
         await postPrematch(e);
         state.prematchPosted.push(e.idEvent);
       }
-      const ev = (await eventDetail(e.idEvent)) ?? e;
-      const goals = onlyGoals(await timeline(e.idEvent))
-        .sort((a, b) => Number(a.intTime) - Number(b.intTime));
-      let h = 0, a = 0;
-      for (const g of goals) {
-        const home = g.strHome === "yes" || g.strTeam === e.strHomeTeam;
-        if (home) h++; else a++;
-        const key = goalKey(e.idEvent, g.intTime, g.strPlayer);
-        if (!state.postedGoals.includes(key)) {
-          await announceGoal(ev, g, `${h} x ${a}`);
-          state.postedGoals.push(key);
-        }
-      }
+      await catchUpGoals(e, state);
     }
     if (isFinished(e) && !state.fulltimePosted.includes(e.idEvent)) {
       if (state.prematchPosted.includes(e.idEvent)) {
+        await catchUpGoals(e, state); // flush late goals before the FT summary
         await postFulltime(e);
         state.fulltimePosted.push(e.idEvent);
       }
@@ -139,8 +171,9 @@ export async function replayDate(date: string): Promise<void> {
     const xi = fmtLineup(e, await lineup(e.idEvent));
     if (xi) { await sendMessage(xi); await Bun.sleep(1200); }
 
-    const goals = onlyGoals(await timeline(e.idEvent))
+    let goals = onlyGoals(await timeline(e.idEvent))
       .sort((a, b) => Number(a.intTime) - Number(b.intTime));
+    if (!goals.length) goals = await fallbackGoals(e);
     let h = 0, a = 0;
     for (const g of goals) {
       const home = g.strHome === "yes" || g.strTeam === e.strHomeTeam;

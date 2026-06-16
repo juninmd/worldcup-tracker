@@ -3,12 +3,22 @@ import { config } from "./config.ts";
 const api = (m: string) =>
   `https://api.telegram.org/bot${config.telegramToken}/${m}`;
 
-async function call(method: string, body: Record<string, unknown>): Promise<void> {
-  const res = await fetch(api(method), {
+async function post(method: string, body: Record<string, unknown>): Promise<Response> {
+  return fetch(api(method), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: config.telegramChat, ...body }),
   });
+}
+
+async function call(method: string, body: Record<string, unknown>): Promise<void> {
+  let res = await post(method, body);
+  // Feed text can contain unbalanced Markdown (* _ [ ]) that Telegram rejects.
+  // Retry once as plain text so the alert still lands instead of crashing the poll.
+  if (res.status === 400 && body.parse_mode) {
+    const { parse_mode, ...plain } = body;
+    res = await post(method, plain);
+  }
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`Telegram ${method} ${res.status}: ${txt}`);

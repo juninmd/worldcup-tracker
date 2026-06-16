@@ -115,6 +115,17 @@ export function fmtGoalCaption(g: TimelineItem, e: WcEvent, pl: Player | null, s
   return lines.join("\n");
 }
 
+/** Goal alert when the timeline feed is unavailable (free API key): scorer
+ *  unknown, but team + running score are taken from the event feed. */
+export function fmtScoreGoal(e: WcEvent, team: string, score: string): string {
+  return [
+    `⚽️ *GOOOL!* ${flag(team)} *${team}*`,
+    `📊 ${flag(e.strHomeTeam)} *${e.strHomeTeam} ${score} ${e.strAwayTeam}* ${flag(e.strAwayTeam)}`,
+    `📅 ${e.dateEvent}${e.strVenue ? ` · 🏟 ${e.strVenue}` : ""}`,
+    `_(autor não disponível no feed)_`,
+  ].join("\n");
+}
+
 export function fmtFulltime(e: WcEvent, p: Prediction, scorers: TimelineItem[]): string {
   const h = Number(e.intHomeScore), a = Number(e.intAwayScore);
   const realRes = h > a ? e.strHomeTeam : h < a ? e.strAwayTeam : "Empate";
