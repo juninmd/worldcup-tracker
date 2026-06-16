@@ -35,11 +35,11 @@ async function call(method: string, body: Record<string, unknown>): Promise<void
   }
 }
 
-export function sendMessage(text: string): Promise<void> {
+export function sendMessage(text: string, preview = false): Promise<void> {
   return call("sendMessage", {
     text,
     parse_mode: "Markdown",
-    disable_web_page_preview: true,
+    disable_web_page_preview: !preview,
   });
 }
 

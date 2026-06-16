@@ -56,6 +56,7 @@ export async function postFulltime(e: WcEvent): Promise<void> {
   if (!goals.length) goals = await fallbackGoals(ev);
   await sendMessage(fmtFulltime(ev, pred, goals));
   await postDetails(ev);
+  if (ev.strVideo) await sendMessage(`🎥 *Melhores lances*\n${ev.strVideo}`, true); // preview embeds the clip
 }
 
 const utcDay = (offset: number): string =>
@@ -182,6 +183,7 @@ export async function replayDate(date: string): Promise<void> {
       await Bun.sleep(1200);
       const st = fmtStats(e, await eventStats(e.idEvent));
       if (st) { await sendMessage(st); await Bun.sleep(1200); }
+      if (e.strVideo) { await sendMessage(`🎥 *Melhores lances*\n${e.strVideo}`, true); await Bun.sleep(1200); }
     }
   }
 }
