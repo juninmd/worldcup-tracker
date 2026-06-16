@@ -1,4 +1,6 @@
 node_modules/
 .env
 data/state.json
+data/wc.db
+data/wc.db-*
 *.log

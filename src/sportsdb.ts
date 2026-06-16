@@ -1,20 +1,45 @@
 import { config } from "./config.ts";
+import { cacheGet, cachePut } from "./db.ts";
 import type { WcEvent, TimelineItem, Player, LineupPlayer, EventStat, TableRow } from "./types.ts";
 
 const base = () => `https://www.thesportsdb.com/api/v1/json/${config.sportsdbKey}`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** How long a cached body is considered fresh, by endpoint. Live feeds get a
+ *  short TTL; near-static data (players, finished-season fixtures) much longer
+ *  so we stop re-fetching it on every poll/restart. */
+function ttlFor(path: string): number {
+  if (path.startsWith("/searchplayers")) return 30 * 86_400_000; // players are static
+  if (path.startsWith("/eventsseason") || path.startsWith("/lookuptable")) return 60_000;
+  return 20_000; // eventsday/timeline/lookupevent/lineup/stats — live-ish
+}
+
 async function get<T>(path: string): Promise<T> {
+  // L1: durable SQLite cache. Serve fresh hits without touching the API.
+  const hit = cacheGet(path);
+  if (hit && hit.age < ttlFor(path)) return JSON.parse(hit.body) as T;
+
   // Free key is rate-limited; back off on 429 so a transient throttle does not
   // crash the poll/homologation. Up to 3 retries with growing delay.
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(`${base()}${path}`);
-    if (res.ok) return (await res.json()) as T;
+    let res: Response;
+    try {
+      res = await fetch(`${base()}${path}`);
+    } catch (err) {
+      if (hit) return JSON.parse(hit.body) as T; // network down → last-known data
+      throw err;
+    }
+    if (res.ok) {
+      const text = await res.text();
+      cachePut(path, text); // write-through so the next boot/poll can serve it
+      return JSON.parse(text) as T;
+    }
     if (res.status === 429 && attempt < 3) {
       await sleep(1500 * (attempt + 1));
       continue;
     }
+    if (hit) return JSON.parse(hit.body) as T; // API error → stale beats crashing
     throw new Error(`SportsDB ${res.status} on ${path}`);
   }
 }
