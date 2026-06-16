@@ -20,6 +20,9 @@ function db(): Database {
     d = new Database(":memory:");
   }
   d.exec("PRAGMA journal_mode = WAL;");
+  // The CronJob shares this file with the tracker pod (same PVC); wait on a lock
+  // instead of throwing SQLITE_BUSY when both write concurrently.
+  d.exec("PRAGMA busy_timeout = 5000;");
   d.exec(`CREATE TABLE IF NOT EXISTS api_cache (
     path       TEXT PRIMARY KEY,
     body       TEXT NOT NULL,
