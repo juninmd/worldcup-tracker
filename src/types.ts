@@ -37,6 +37,8 @@ export interface WcEvent {
   strAwayTeamBadge?: string | null;
   strPoster?: string | null;
   strThumb?: string | null;
+  strFanart?: string | null;
+  strBanner?: string | null;
   strVideo?: string | null;
 }
 

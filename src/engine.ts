@@ -34,9 +34,15 @@ export async function postDailyMenu(date: string): Promise<void> {
   await postStandings();
 }
 
+/** Best available event artwork to use as a visual cover. */
+const eventCover = (e: WcEvent): string | null =>
+  e.strThumb || e.strPoster || e.strFanart || e.strBanner || null;
+
 export async function postPrematch(e: WcEvent): Promise<void> {
   const { table } = await ratingsNow();
   const ev = (await eventDetail(e.idEvent)) ?? e;
+  const cover = eventCover(ev);
+  if (cover) await sendPhoto(cover, `⚽️ ${ev.strHomeTeam} x ${ev.strAwayTeam}`);
   await sendMessage(fmtPrematch(ev, predictMatch(table, ev.strHomeTeam, ev.strAwayTeam)));
 }
 
@@ -162,6 +168,8 @@ export async function replayDate(date: string): Promise<void> {
   for (const base of events) {
     const e = (await eventDetail(base.idEvent)) ?? base;
     const pred = predictMatch(table, e.strHomeTeam, e.strAwayTeam);
+    const cover = eventCover(e);
+    if (cover) { await sendPhoto(cover, `⚽️ ${e.strHomeTeam} x ${e.strAwayTeam}`); await Bun.sleep(1200); }
     await sendMessage(fmtPrematch(e, pred));
     await Bun.sleep(1200);
 
