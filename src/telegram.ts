@@ -51,3 +51,20 @@ export async function sendPhoto(photoUrl: string, caption: string): Promise<void
     await sendMessage(caption);
   }
 }
+
+/** Photo album (2–10 images) with the caption on the first item — used to show
+ *  both team badges / event artwork together as a single rich card. */
+export async function sendMediaGroup(photoUrls: string[], caption: string): Promise<void> {
+  const photos = photoUrls.filter(Boolean).slice(0, 10);
+  if (photos.length < 2) { // album needs ≥2; otherwise a single photo (or text)
+    if (photos[0]) return sendPhoto(photos[0], caption);
+    return sendMessage(caption);
+  }
+  const media = photos.map((photo, i) =>
+    i === 0 ? { type: "photo", media: photo, caption, parse_mode: "Markdown" } : { type: "photo", media: photo });
+  try {
+    await call("sendMediaGroup", { media });
+  } catch {
+    await sendMessage(caption); // album rejected → keep the text alert
+  }
+}

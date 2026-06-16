@@ -1,6 +1,7 @@
 import { isFinished, isLive, seasonEvents, timeline, findPlayer } from "./sportsdb.ts";
 import { flag } from "./format.ts";
 import { sendMessage, sendPhoto } from "./telegram.ts";
+import { scorersChartUrl } from "./charts.ts";
 
 export interface Scorer {
   player: string;
@@ -51,5 +52,7 @@ export async function postTopScorers(): Promise<Scorer[]> {
   const img = pl?.strCutout || pl?.strThumb;
   if (img) await sendPhoto(img, fmtScorers(list));
   else await sendMessage(fmtScorers(list));
+  const chart = scorersChartUrl(list);
+  if (chart) await sendPhoto(chart, "📊 Artilharia — Copa do Mundo 2026");
   return list;
 }

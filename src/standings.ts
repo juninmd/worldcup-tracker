@@ -2,7 +2,8 @@ import type { TableRow, WcEvent } from "./types.ts";
 import { leagueTable, seasonEvents } from "./sportsdb.ts";
 import { isFinished } from "./sportsdb.ts";
 import { flag } from "./format.ts";
-import { sendMessage } from "./telegram.ts";
+import { sendMessage, sendPhoto } from "./telegram.ts";
+import { standingsChartUrl } from "./charts.ts";
 
 const num = (v: string | null | undefined) => Number(v ?? 0) || 0;
 
@@ -76,7 +77,10 @@ function fmtRealBracket(events: WcEvent[]): string {
 }
 
 export async function postStandings(): Promise<void> {
-  await sendMessage(fmtStandings(await leagueTable()));
+  const rows = await leagueTable();
+  await sendMessage(fmtStandings(rows));
+  const chart = standingsChartUrl(rows);
+  if (chart) await sendPhoto(chart, "📊 Classificação — Copa do Mundo 2026");
 }
 
 export async function postKnockout(): Promise<void> {

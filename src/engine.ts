@@ -4,7 +4,7 @@ import { trainRatings, outcomeOf } from "./elo.ts";
 import { predictMatch } from "./predict.ts";
 import { championForecast } from "./champion.ts";
 import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, fmtScoreGoal } from "./format.ts";
-import { sendMessage, sendPhoto } from "./telegram.ts";
+import { sendMediaGroup, sendMessage, sendPhoto } from "./telegram.ts";
 import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
@@ -63,8 +63,10 @@ const eventCover = (e: WcEvent): string | null =>
 export async function postPrematch(e: WcEvent): Promise<void> {
   const { table } = await ratingsNow();
   const ev = (await eventDetail(e.idEvent)) ?? e;
-  const cover = eventCover(ev);
-  if (cover) await sendPhoto(cover, `⚽️ ${ev.strHomeTeam} x ${ev.strAwayTeam}`);
+  // Rich card: event artwork + both team crests as one album.
+  const art = [eventCover(ev), ev.strHomeTeamBadge, ev.strAwayTeamBadge].filter((x): x is string => !!x);
+  const caption = `⚽️ ${ev.strHomeTeam} x ${ev.strAwayTeam}`;
+  if (art.length) await sendMediaGroup(art, caption);
   await sendMessage(fmtPrematch(ev, predictMatch(table, ev.strHomeTeam, ev.strAwayTeam)));
 }
 
