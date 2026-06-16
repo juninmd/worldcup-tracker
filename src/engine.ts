@@ -41,8 +41,17 @@ export async function postDailyMenu(date: string): Promise<void> {
     .sort((a, b) => (b.strTimestamp ?? "").localeCompare(a.strTimestamp ?? ""));
   const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];
   const champ = championForecast(table, teams);
-  const cover = today.map(eventCover).find(Boolean);
-  if (cover) await sendPhoto(cover, `📅 Jogos de hoje — ${date}`);
+  // Headline an actual game still to come today, not one that already finished
+  // (the day feed lists late-night fixtures under the next calendar day).
+  const upcoming = today.filter((e) => !isFinished(e));
+  const headline = (upcoming[0] ?? today[0]) as WcEvent | undefined;
+  const cover = upcoming.map(eventCover).find(Boolean) ?? today.map(eventCover).find(Boolean);
+  if (cover) {
+    const caption = headline
+      ? `⚽️ Hoje: ${headline.strHomeTeam} x ${headline.strAwayTeam} — ${date}`
+      : `📅 Jogos de hoje — ${date}`;
+    await sendPhoto(cover, caption);
+  }
   await sendMessage(fmtDailyMenu(date, today, preds, recent, champ, await topScorers()));
   await postStandings();
 }
