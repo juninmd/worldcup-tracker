@@ -12,6 +12,9 @@ import { fmtLineup, fmtStats, postDetails } from "./details.ts";
 import { fallbackGoals } from "./flashscore.ts";
 import { postStandings } from "./standings.ts";
 import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
+import { writeFile } from "node:fs/promises";
+
+const HEARTBEAT = new URL("../data/heartbeat", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
 export async function ratingsNow() {
   const all = await seasonEvents();
@@ -152,6 +155,9 @@ export async function trackForever(): Promise<void> {
     } catch (err) {
       console.error("poll error:", (err as Error).message);
     }
+    // Liveness heartbeat: a healthy loop refreshes this file every pass; the
+    // k8s livenessProbe restarts the pod if it goes stale (hung fetch/deadlock).
+    await writeFile(HEARTBEAT, new Date().toISOString()).catch(() => {});
     await Bun.sleep(config.pollIntervalSec * 1000);
   }
 }
