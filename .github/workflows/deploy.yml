@@ -15,3 +15,29 @@ jobs:
       image-name: ${{ github.repository }}
     secrets:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Pin the freshly-built immutable tag into app-charts so ArgoCD auto-sync
+  # rolls it out. Needs CHARTS_TOKEN: a PAT with contents:write on app-charts.
+  deploy:
+    needs: docker
+    runs-on: ubuntu-latest
+    env:
+      CHARTS_TOKEN: ${{ secrets.CHARTS_TOKEN }}
+    steps:
+      - name: Guard
+        if: env.CHARTS_TOKEN == ''
+        run: echo "::warning::CHARTS_TOKEN ausente — pulando auto-deploy (ArgoCD segue em :latest)"
+      - uses: actions/checkout@v4
+        if: env.CHARTS_TOKEN != ''
+        with:
+          repository: juninmd/app-charts
+          token: ${{ secrets.CHARTS_TOKEN }}
+      - name: Bump image to ${{ github.sha }}
+        if: env.CHARTS_TOKEN != ''
+        run: |
+          sed -i -E "s#(ghcr.io/juninmd/worldcup-tracker):[^\"[:space:]]+#\1:${GITHUB_SHA}#g" \
+            worldcup-tracker/deployment.yaml worldcup-tracker/cronjob.yaml
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git diff --quiet || git commit -am "deploy(worldcup-tracker): ${GITHUB_SHA::7} [skip ci]"
+          git push
