@@ -3,18 +3,42 @@ import type { WcEvent, TimelineItem, Player, LineupPlayer, EventStat, TableRow }
 
 const base = () => `https://www.thesportsdb.com/api/v1/json/${config.sportsdbKey}`;
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${base()}${path}`);
-  if (!res.ok) throw new Error(`SportsDB ${res.status} on ${path}`);
-  return (await res.json()) as T;
+  // Free key is rate-limited; back off on 429 so a transient throttle does not
+  // crash the poll/homologation. Up to 3 retries with growing delay.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${base()}${path}`);
+    if (res.ok) return (await res.json()) as T;
+    if (res.status === 429 && attempt < 3) {
+      await sleep(1500 * (attempt + 1));
+      continue;
+    }
+    throw new Error(`SportsDB ${res.status} on ${path}`);
+  }
+}
+
+// Short-TTL cache for the heaviest, most-repeated feeds. Cuts redundant calls
+// within a poll (well under the 60s interval) so we stay under the rate limit.
+const TTL = 30_000;
+const cache = new Map<string, { at: number; v: unknown }>();
+async function cached<T>(k: string, f: () => Promise<T>): Promise<T> {
+  const hit = cache.get(k);
+  if (hit && Date.now() - hit.at < TTL) return hit.v as T;
+  const v = await f();
+  cache.set(k, { at: Date.now(), v });
+  return v;
 }
 
 /** All World Cup events of the configured season (full fixture + results). */
-export async function seasonEvents(): Promise<WcEvent[]> {
-  const d = await get<{ events: WcEvent[] | null }>(
-    `/eventsseason.php?id=${config.leagueId}&s=${config.season}`,
-  );
-  return d.events ?? [];
+export function seasonEvents(): Promise<WcEvent[]> {
+  return cached("season", async () => {
+    const d = await get<{ events: WcEvent[] | null }>(
+      `/eventsseason.php?id=${config.leagueId}&s=${config.season}`,
+    );
+    return d.events ?? [];
+  });
 }
 
 export async function eventsOnDate(date: string): Promise<WcEvent[]> {
@@ -23,11 +47,13 @@ export async function eventsOnDate(date: string): Promise<WcEvent[]> {
 }
 
 /** Group-stage standings table (per-team points, GD, group). */
-export async function leagueTable(): Promise<TableRow[]> {
-  const d = await get<{ table: TableRow[] | null }>(
-    `/lookuptable.php?l=${config.leagueId}&s=${config.season}`,
-  );
-  return d.table ?? [];
+export function leagueTable(): Promise<TableRow[]> {
+  return cached("table", async () => {
+    const d = await get<{ table: TableRow[] | null }>(
+      `/lookuptable.php?l=${config.leagueId}&s=${config.season}`,
+    );
+    return d.table ?? [];
+  });
 }
 
 /** Events for a calendar day via the day feed — includes LIVE status (1H/HT/2H)

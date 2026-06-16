@@ -11,6 +11,8 @@ async function post(method: string, body: Record<string, unknown>): Promise<Resp
   });
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function call(method: string, body: Record<string, unknown>): Promise<void> {
   let res = await post(method, body);
   // Feed text can contain unbalanced Markdown (* _ [ ]) that Telegram rejects.
@@ -18,6 +20,14 @@ async function call(method: string, body: Record<string, unknown>): Promise<void
   if (res.status === 400 && body.parse_mode) {
     const { parse_mode, ...plain } = body;
     res = await post(method, plain);
+  }
+  // Telegram throttles bursts (~20 msg/min/group); honour retry_after and resend.
+  for (let attempt = 0; res.status === 429 && attempt < 3; attempt++) {
+    const body429 = (await res.clone().json().catch(() => null)) as
+      { parameters?: { retry_after?: number } } | null;
+    const wait = body429?.parameters?.retry_after ?? 5;
+    await sleep((wait + 1) * 1000);
+    res = await post(method, body);
   }
   if (!res.ok) {
     const txt = await res.text();
