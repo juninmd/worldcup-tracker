@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 // Lives on the same PVC as state.json (/app/data in the cluster), so the cache
 // survives pod restarts — the app can serve last-known data without hitting the
@@ -8,7 +10,15 @@ const FILE = new URL("../data/wc.db", import.meta.url).pathname.replace(/^\/([A-
 let _db: Database | null = null;
 function db(): Database {
   if (_db) return _db;
-  const d = new Database(FILE, { create: true });
+  // Some workloads (e.g. the daily-menu CronJob) run without the PVC mounted;
+  // fall back to an in-memory cache so a missing/read-only dir never crashes.
+  let d: Database;
+  try {
+    mkdirSync(dirname(FILE), { recursive: true });
+    d = new Database(FILE, { create: true });
+  } catch {
+    d = new Database(":memory:");
+  }
   d.exec("PRAGMA journal_mode = WAL;");
   d.exec(`CREATE TABLE IF NOT EXISTS api_cache (
     path       TEXT PRIMARY KEY,
