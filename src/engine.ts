@@ -5,7 +5,7 @@ import { predictMatch } from "./predict.ts";
 import { championForecast } from "./champion.ts";
 import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, fmtScoreGoal } from "./format.ts";
 import { sendMessage, sendPhoto } from "./telegram.ts";
-import { goalKey, loadState, saveState } from "./state.ts";
+import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
@@ -73,44 +73,40 @@ async function trackedEvents(): Promise<WcEvent[]> {
   return [...map.values()];
 }
 
-/** Announce any goals in the timeline not yet posted. Runs for live AND
- *  finished matches so late goals the API only publishes at full-time are
- *  not lost when the match flips FT between polls. */
+/** Announce goals not yet posted. Score-driven for real-time guarantee: the
+ *  score is the source of truth that a goal happened; the incident feed only
+ *  enriches it with the scorer. Goals are keyed by side + ordinal, so a goal
+ *  posted from the score is never re-posted when its scorer later publishes.
+ *  Runs for live AND finished matches (flushes late goals before full-time). */
 async function catchUpGoals(e: WcEvent, state: Awaited<ReturnType<typeof loadState>>): Promise<void> {
   const ev = (await eventDetail(e.idEvent)) ?? e;
   let goals = onlyGoals(await timeline(e.idEvent))
     .sort((a, b) => Number(a.intTime) - Number(b.intTime));
   if (!goals.length) goals = await fallbackGoals(ev); // free key: no timeline → Flashscore
-  if (goals.length) {
-    let h = 0, a = 0;
-    for (const g of goals) {
-      const home = g.strHome === "yes" || g.strTeam === e.strHomeTeam;
-      if (home) h++; else a++;
-      const key = goalKey(e.idEvent, g.intTime, g.strPlayer);
-      if (!state.postedGoals.includes(key)) {
-        await announceGoal(ev, g, `${h} x ${a}`);
-        state.postedGoals.push(key);
-      }
-    }
-    return;
-  }
-  await catchUpFromScore(ev, state); // free key: no timeline → derive from score
-}
 
-/** Fallback when the timeline feed is empty: announce one alert per goal
- *  inferred from the score delta. Scorer/order unknown — home goals first. */
-async function catchUpFromScore(e: WcEvent, state: Awaited<ReturnType<typeof loadState>>): Promise<void> {
-  const sh = Number(e.intHomeScore), sa = Number(e.intAwayScore);
-  if (!Number.isFinite(sh) || !Number.isFinite(sa)) return;
-  let h = 0, a = 0;
-  const fire = async (team: string, side: "H" | "A", n: number) => {
-    const key = `${e.idEvent}:score:${side}${n}`;
+  const isHome = (g: TimelineItem) => g.strHome === "yes" || g.strTeam === ev.strHomeTeam;
+  const homeInc = goals.filter(isHome).length;
+  const awayInc = goals.length - homeInc;
+  // Score wins when ahead of the (often lagging) incident feed.
+  const sh = Math.max(Number(ev.intHomeScore) || 0, homeInc);
+  const sa = Math.max(Number(ev.intAwayScore) || 0, awayInc);
+
+  let h = 0, a = 0, hi = 0, ai = 0;
+  const post = async (side: "H" | "A", run: string, body: () => Promise<void>) => {
+    const ord = side === "H" ? ++hi : ++ai;
+    const key = `${ev.idEvent}:${side}:${ord}`;
     if (state.postedGoals.includes(key)) return;
-    await sendMessage(fmtScoreGoal(e, team, `${h} x ${a}`));
+    await body();
     state.postedGoals.push(key);
   };
-  for (let n = 1; n <= sh; n++) { h++; await fire(e.strHomeTeam, "H", n); }
-  for (let n = 1; n <= sa; n++) { a++; await fire(e.strAwayTeam, "A", n); }
+
+  for (const g of goals) { // known scorers, progressively by minute
+    const home = isHome(g);
+    if (home) h++; else a++;
+    await post(home ? "H" : "A", `${h} x ${a}`, () => announceGoal(ev, g, `${h} x ${a}`));
+  }
+  while (hi < sh) { h++; await post("H", `${h} x ${a}`, () => sendMessage(fmtScoreGoal(ev, ev.strHomeTeam, `${h} x ${a}`))); }
+  while (ai < sa) { a++; await post("A", `${h} x ${a}`, () => sendMessage(fmtScoreGoal(ev, ev.strAwayTeam, `${h} x ${a}`))); }
 }
 
 /** One polling pass over live matches: prematch, goals, full-time. */

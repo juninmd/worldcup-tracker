@@ -25,6 +25,3 @@ export async function saveState(s: State): Promise<void> {
   await mkdir(dirname(FILE), { recursive: true });
   await writeFile(FILE, JSON.stringify(s, null, 2));
 }
-
-export const goalKey = (idEvent: string, minute: string, player: string | null) =>
-  `${idEvent}:${minute}:${player ?? "?"}`;
