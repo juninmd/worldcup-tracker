@@ -89,6 +89,12 @@ export interface Prediction {
   pAway: number;
   eloHome: number;
   eloAway: number;
+  playerQualityHome: number;
+  playerQualityAway: number;
+  strengthHome: number;
+  strengthAway: number;
+  fifaRankHome?: number;
+  fifaRankAway?: number;
 }
 
 export interface MatchOutcome {

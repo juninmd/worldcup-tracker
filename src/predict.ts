@@ -1,5 +1,5 @@
-import type { Prediction } from "./types.ts";
-import { expectancy, hostAdvantage, rating } from "./elo.ts";
+import type { Prediction, WcEvent } from "./types.ts";
+import { canonicalTeam, expectancy, fifaRank, hostAdvantage, playerQuality, teamStrength } from "./elo.ts";
 
 const AVG_GOALS = 2.6; // typical total goals per WC match
 
@@ -22,10 +22,13 @@ export function predictMatch(
   table: Record<string, number>,
   home: string,
   away: string,
+  history: WcEvent[] = [],
 ): Prediction {
-  const eloHome = rating(table, home);
-  const eloAway = rating(table, away);
-  const [lh, la] = lambdas(eloHome, eloAway);
+  const bias = h2hBias(home, away, history);
+  const qh = playerQuality(home), qa = playerQuality(away);
+  const strengthHome = teamStrength(table, home) + bias;
+  const strengthAway = teamStrength(table, away) - bias;
+  const [lh, la] = lambdas(strengthHome, strengthAway);
 
   let pHome = 0, pDraw = 0, pAway = 0;
   let best = -1, bh = 0, ba = 0;
@@ -44,9 +47,35 @@ export function predictMatch(
     pHome: round(pHome),
     pDraw: round(pDraw),
     pAway: round(pAway),
-    eloHome: Math.round(eloHome),
-    eloAway: Math.round(eloAway),
+    eloHome: Math.round(strengthHome - qh),
+    eloAway: Math.round(strengthAway - qa),
+    playerQualityHome: qh,
+    playerQualityAway: qa,
+    strengthHome: Math.round(strengthHome),
+    strengthAway: Math.round(strengthAway),
+    fifaRankHome: fifaRank(home) ?? undefined,
+    fifaRankAway: fifaRank(away) ?? undefined,
   };
 }
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
+
+function h2hBias(home: string, away: string, history: WcEvent[]): number {
+  const h = canonicalTeam(home).toLowerCase(), a = canonicalTeam(away).toLowerCase();
+  const meetings = history
+    .filter((e) => {
+      const eh = canonicalTeam(e.strHomeTeam).toLowerCase(), ea = canonicalTeam(e.strAwayTeam).toLowerCase();
+      return ((eh === h && ea === a) || (eh === a && ea === h)) &&
+        e.intHomeScore !== null && e.intAwayScore !== null;
+    })
+    .sort((x, y) => (y.strTimestamp ?? y.dateEvent).localeCompare(x.strTimestamp ?? x.dateEvent))
+    .slice(0, 10);
+  if (!meetings.length) return 0;
+  const score = meetings.reduce((sum, e) => {
+    const hs = Number(e.intHomeScore), as = Number(e.intAwayScore);
+    if (Number.isNaN(hs) || Number.isNaN(as) || hs === as) return sum;
+    const winner = canonicalTeam(hs > as ? e.strHomeTeam : e.strAwayTeam).toLowerCase();
+    return sum + (winner === h ? 1 : -1);
+  }, 0);
+  return Math.max(-35, Math.min(35, (score / meetings.length) * 35));
+}

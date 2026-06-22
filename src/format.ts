@@ -1,5 +1,6 @@
 import type { WcEvent, Prediction, Player, TimelineItem } from "./types.ts";
 import type { ChampionOdds } from "./champion.ts";
+import type { ProjectedMatch } from "./tournament.ts";
 import type { Scorer } from "./scorers.ts";
 
 const FLAGS: Record<string, string> = {
@@ -18,9 +19,19 @@ const FLAGS: Record<string, string> = {
   Australia: "🇦🇺", Jordan: "🇯🇴", Uzbekistan: "🇺🇿", Colombia: "🇨🇴", Chile: "🇨🇱",
   Peru: "🇵🇪", Ecuador: "🇪🇨", Venezuela: "🇻🇪", Bolivia: "🇧🇴", "Costa Rica": "🇨🇷",
   Panama: "🇵🇦", Jamaica: "🇯🇲", Honduras: "🇭🇳", Haiti: "🇭🇹", "Curaçao": "🇨🇼",
+  Curacao: "🇨🇼", "Bosnia and Herzegovina": "🇧🇦", "DR Congo": "🇨🇩",
 };
 export const flag = (t: string) => FLAGS[t] ?? "⚽";
-const pct = (p: number) => `${Math.round(p * 100)}%`;
+export const pct = (p: number) => `${Math.round(p * 100)}%`;
+
+// Unicode probability bar: `pHome | pDraw | pAway` visualised in 30 chars total.
+function oddsBar(pHome: number, pDraw: number, pAway: number): string {
+  const W = 20;
+  const fH = Math.round(pHome * W), fD = Math.round(pDraw * W), fA = W - fH - fD;
+  return `🏠 ${("█".repeat(Math.max(0, fH)) + "░".repeat(Math.max(0, W - fH))).slice(0, W)} ${pct(pHome)}`
+    + `\n🤝 ${"█".repeat(Math.max(0, fD))}${"░".repeat(Math.max(0, W - fD))} ${pct(pDraw)}`
+    + `\n✈️ ${"█".repeat(Math.max(0, fA))}${"░".repeat(Math.max(0, W - fA))} ${pct(pAway)}`;
+}
 
 /** Robust UTC parser: handles "DD/MM/YYYY HH:mm:ss" and ISO-ish strings. */
 function parseUtc(ts: string | null): Date | null {
@@ -68,16 +79,29 @@ function ctx(e: WcEvent): string {
 
 export function fmtPrematch(e: WcEvent, p: Prediction): string {
   const fav = p.pHome >= p.pAway ? e.strHomeTeam : e.strAwayTeam;
+  const rankLine = (p.fifaRankHome && p.fifaRankAway)
+    ? `🌍 Ranking FIFA: ${flag(e.strHomeTeam)} *#${p.fifaRankHome}* ${e.strHomeTeam} vs ${e.strAwayTeam} *#${p.fifaRankAway}* ${flag(e.strAwayTeam)}`
+    : p.fifaRankHome
+    ? `🌍 Ranking FIFA: ${e.strHomeTeam} *#${p.fifaRankHome}*`
+    : p.fifaRankAway
+    ? `🌍 Ranking FIFA: ${e.strAwayTeam} *#${p.fifaRankAway}*`
+    : "";
+  const eloDiff = Math.abs(p.strengthHome - p.strengthAway);
+  const dominance = eloDiff > 150 ? "superioridade clara" : eloDiff > 80 ? "ligeiro favoritismo" : "jogo equilibrado";
   return [
     `🔮 *EXPECTATIVA DO JOGO*`,
     `${flag(e.strHomeTeam)} *${e.strHomeTeam}* x *${e.strAwayTeam}* ${flag(e.strAwayTeam)}`,
     `🕒 ${kickoff(e)}`,
     venueLine(e),
     ctx(e),
+    rankLine,
     ``,
-    `📊 Placar provável: *${p.homeGoals} x ${p.awayGoals}*`,
-    `🏆 Vitória ${e.strHomeTeam}: *${pct(p.pHome)}* | Empate: *${pct(p.pDraw)}* | Vitória ${e.strAwayTeam}: *${pct(p.pAway)}*`,
-    `💪 Favorito: *${fav}* (Elo ${p.eloHome} x ${p.eloAway})`,
+    `📊 Placar provável: *${p.homeGoals} x ${p.awayGoals}*  _(${dominance})_`,
+    ``,
+    oddsBar(p.pHome, p.pDraw, p.pAway),
+    ``,
+    `💪 Favorito: *${fav}*`,
+    `🧠 Elo ${p.eloHome} vs ${p.eloAway} · elenco +${p.playerQualityHome} vs +${p.playerQualityAway} · força ${p.strengthHome} vs ${p.strengthAway}`,
   ].filter(Boolean).join("\n");
 }
 
@@ -145,19 +169,27 @@ export function fmtFulltime(e: WcEvent, p: Prediction, scorers: TimelineItem[]):
     : p.pAway >= p.pDraw ? e.strAwayTeam : "Empate";
   const hitWinner = predRes === realRes;
   const goals = scorers.length
-    ? scorers.map((g) => `   ${g.intTime}' ${g.strPlayer} (${g.strTeam})${g.strAssist ? ` 🅰️ ${g.strAssist}` : ""}`).join("\n")
+    ? scorers.map((g) => `   ${g.intTime}' ${g.strPlayer ?? "?"} (${g.strTeam ?? "?"})${g.strAssist ? ` 🅰️ ${g.strAssist}` : ""}`).join("\n")
     : "   —";
+  const totalGoals = h + a;
+  const rankLine = (p.fifaRankHome && p.fifaRankAway)
+    ? `🌍 FIFA #${p.fifaRankHome} ${e.strHomeTeam} vs #${p.fifaRankAway} ${e.strAwayTeam}`
+    : "";
+  const upset = (h > a && p.pHome < 0.35) || (a > h && p.pAway < 0.35)
+    ? "⚡ *ZEBRA!* O azarão venceu." : "";
   return [
     `⏱ *FIM DE JOGO*`,
     `${flag(e.strHomeTeam)} *${e.strHomeTeam} ${h} x ${a} ${e.strAwayTeam}* ${flag(e.strAwayTeam)}`,
     `🕒 ${kickoff(e)}`,
     venueLine(e),
     ctx(e),
+    rankLine,
     e.intSpectators ? `👥 Público: ${Number(e.intSpectators).toLocaleString("pt-BR")}` : "",
+    upset,
     ``,
     `🎯 *Expectativa x Realidade*`,
-    `Previsto: ${p.homeGoals} x ${p.awayGoals} (${predRes})`,
-    `Real:     ${h} x ${a} (${realRes})`,
+    `Previsto: ${p.homeGoals}×${p.awayGoals} (${predRes}) · odds ${pct(p.pHome)}/${pct(p.pDraw)}/${pct(p.pAway)}`,
+    `Real:     ${h}×${a} (${realRes}) · ${totalGoals} gol${totalGoals !== 1 ? "s" : ""}`,
     `Placar exato: ${hitScore ? "✅ acertou" : "❌ errou"} | Resultado: ${hitWinner ? "✅ acertou" : "❌ errou"}`,
     ``,
     `⚽️ *Gols:*`,
@@ -169,31 +201,60 @@ export function fmtFulltime(e: WcEvent, p: Prediction, scorers: TimelineItem[]):
 export function fmtDailyMenu(
   date: string, today: WcEvent[], preds: Map<string, Prediction>,
   recent: WcEvent[], champ: ChampionOdds[], scorers: Scorer[] = [],
+  brazilPath: ProjectedMatch[] = [],
 ): string {
   const day = today.length
     ? today.map((e) => {
         const p = preds.get(e.idEvent);
-        const tip = p ? ` _(prev. ${p.homeGoals}x${p.awayGoals})_` : "";
-        return `• ${kickoff(e)} ${flag(e.strHomeTeam)} ${e.strHomeTeam} x ${e.strAwayTeam} ${flag(e.strAwayTeam)}${tip}`;
+        const tip = p ? ` _(prev. ${p.homeGoals}×${p.awayGoals})_` : "";
+        const rankInfo = p?.fifaRankHome && p?.fifaRankAway
+          ? ` [#${p.fifaRankHome} vs #${p.fifaRankAway}]` : "";
+        return `• ${kickoff(e)} ${flag(e.strHomeTeam)} ${e.strHomeTeam} x ${e.strAwayTeam} ${flag(e.strAwayTeam)}${tip}${rankInfo}`;
       }).join("\n")
     : "_Sem jogos hoje._";
   const last = recent.length
     ? recent.slice(0, 6).map((e) =>
-        `• ${e.strHomeTeam} ${e.intHomeScore}-${e.intAwayScore} ${e.strAwayTeam}`).join("\n")
+        `• ${flag(e.strHomeTeam)} ${e.strHomeTeam} ${e.intHomeScore}–${e.intAwayScore} ${e.strAwayTeam} ${flag(e.strAwayTeam)}`).join("\n")
     : "_Sem resultados ainda._";
   const odds = champ.slice(0, 6)
-    .map((c, i) => `${i + 1}. ${flag(c.team)} ${c.team} — *${pct(c.prob)}*`).join("\n");
+    .map((c, i) => `${i + 1}. ${flag(c.team)} ${c.team} — *${pct(c.prob)}* (força ${c.strength})`).join("\n");
   const art = scorers.length
     ? scorers.slice(0, 5).map((s, i) =>
         `${i + 1}. ${flag(s.team)} ${s.player} (${s.team}) — *${s.goals}* ⚽️`).join("\n")
     : "_Sem gols ainda._";
+
+  const brazilSection = brazilPath.length
+    ? [
+        `🇧🇷 *PRÓXIMOS PASSOS DO BRASIL*`,
+        ...brazilPath.slice(0, 3).map((m) => {
+          const isBrazilHome = canonicalTeam(m.home) === "Brazil";
+          const opponent = isBrazilHome ? m.away : m.home;
+          const pBrazil = isBrazilHome ? m.prediction.pHome : m.prediction.pAway;
+          const rankOp = isBrazilHome ? m.prediction.fifaRankAway : m.prediction.fifaRankHome;
+          const rankStr = rankOp ? ` (FIFA #${rankOp})` : "";
+          return `• *${m.round}*: vs ${flag(opponent)} ${opponent}${rankStr} — ${pct(pBrazil)} Brasil vence`;
+        }),
+      ].join("\n")
+    : "";
+
   return [
     `📅 *MENU DO DIA — ${date}*`,
     `🏟 *Copa do Mundo 2026*`,
     ``,
     `*Jogos de hoje:*`, day, ``,
+    brazilSection, brazilSection ? `` : null,
     `*Últimos resultados:*`, last, ``,
     `⚽️ *Artilheiros:*`, art, ``,
-    `🏆 *Favoritos ao título (Elo):*`, odds,
-  ].join("\n");
+    `🏆 *Favoritos ao título (FIFA/Elo + elenco):*`, odds,
+  ].filter((x) => x !== null).join("\n");
+}
+
+function canonicalTeam(name: string): string {
+  return name
+    .replace(/^(USA|United States).*/i, "USA")
+    .replace(/^South Korea$/i, "Korea Republic")
+    .replace(/^Czechia$/i, "Czech Republic")
+    .replace(/^Turkiye$/i, "Turkey")
+    .replace(/^Türkiye$/i, "Turkey")
+    .trim();
 }
