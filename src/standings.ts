@@ -1,11 +1,13 @@
 import type { TableRow, WcEvent } from "./types.ts";
-import { leagueTable, seasonEvents } from "./sportsdb.ts";
+import { leagueTable, mergedSeasonEvents } from "./sportsdb.ts";
 import { isFinished } from "./sportsdb.ts";
 import { flag } from "./format.ts";
 import { sendMessage, sendPhoto } from "./telegram.ts";
 import { standingsChartUrl } from "./charts.ts";
+import { tournamentProjection, type ProjectedTeam } from "./tournament.ts";
 
 const num = (v: string | null | undefined) => Number(v ?? 0) || 0;
+const FULL_FIELD = 48;
 
 /** Group rows by strGroup, sorted by points → goal difference → goals for. */
 export function byGroup(rows: TableRow[]): Map<string, TableRow[]> {
@@ -44,16 +46,50 @@ export function fmtStandings(rows: TableRow[]): string {
   return out.join("\n");
 }
 
+function projectedToRows(groups: Map<string, ProjectedTeam[]>): TableRow[] {
+  return [...groups.entries()].flatMap(([group, teams]) =>
+    teams.map((t, i) => ({
+      intRank: String(i + 1),
+      strTeam: t.team,
+      strGroup: group,
+      intPlayed: String(t.played),
+      intWin: null,
+      intDraw: null,
+      intLoss: null,
+      intGoalsFor: String(t.gf),
+      intGoalsAgainst: String(t.ga),
+      intGoalDifference: String(t.gf - t.ga),
+      intPoints: String(t.points),
+    })));
+}
+
+export async function currentStandingsRows(): Promise<TableRow[]> {
+  const rows = await leagueTable();
+  if (rows.length >= FULL_FIELD) return rows;
+  return projectedToRows((await tournamentProjection()).groups);
+}
+
+export async function fmtCurrentStandings(): Promise<string> {
+  const rows = await leagueTable();
+  if (rows.length >= FULL_FIELD) return fmtStandings(rows);
+  const projected = projectedToRows((await tournamentProjection()).groups);
+  return `${fmtStandings(projected)}\n\n_API parcial (${rows.length}/${FULL_FIELD}); usando projeção com resultados recentes._`;
+}
+
 /** Projected qualifiers: top 2 of each group by current standings. */
+export function isKnockoutEvent(e: WcEvent): boolean {
+  return /final|round of|quarter|semi|16|32/i.test(e.strEvent);
+}
+
 export async function fmtKnockout(): Promise<string> {
-  const events = await seasonEvents();
-  const knockout = events.filter((e) => num(e.intRound) >= 2 || /final|round of|quarter|semi|16|32/i.test(e.strEvent));
+  const events = await mergedSeasonEvents();
+  const knockout = events.filter(isKnockoutEvent);
   if (knockout.length) return fmtRealBracket(knockout);
 
-  const groups = byGroup(await leagueTable());
+  const groups = byGroup(await currentStandingsRows());
   const lines = [
     `🗺️ *MATA-MATA — projeção*`,
-    `_O chaveamento oficial sai após a fase de grupos. Projeção pelos líderes atuais:_`,
+    `_O chaveamento oficial sai após a fase de grupos. Projeção pelos líderes atuais + resultados recentes:_`,
     ``,
   ];
   for (const [g, list] of groups) {
@@ -77,8 +113,8 @@ function fmtRealBracket(events: WcEvent[]): string {
 }
 
 export async function postStandings(): Promise<void> {
-  const rows = await leagueTable();
-  await sendMessage(fmtStandings(rows));
+  const rows = await currentStandingsRows();
+  await sendMessage(await fmtCurrentStandings());
   const chart = standingsChartUrl(rows);
   if (chart) await sendPhoto(chart, "📊 Classificação — Copa do Mundo 2026");
 }

@@ -1,11 +1,13 @@
 import { championForecast } from "./champion.ts";
 import { predictMatch } from "./predict.ts";
 import { postDailyMenu, ratingsNow, replayDate, trackForever } from "./engine.ts";
-import { seasonEvents } from "./sportsdb.ts";
+import { postTournamentProjection } from "./engine.ts";
+import { mergedSeasonEvents } from "./sportsdb.ts";
 import { fmtScorers, postTopScorers, topScorers } from "./scorers.ts";
 import { postDetails } from "./details.ts";
-import { fmtStandings, fmtKnockout, postStandings, postKnockout } from "./standings.ts";
-import { leagueTable } from "./sportsdb.ts";
+import { fmtCurrentStandings, fmtKnockout, postStandings, postKnockout } from "./standings.ts";
+import { fmtTournamentProjection, tournamentProjection } from "./tournament.ts";
+import { homologateForecast } from "./homologation.ts";
 
 function todayBRT(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -24,15 +26,21 @@ switch (cmd) {
     break;
   case "homologate":
   case "replay": {
+    if (rest[0] === "forecast" || rest[0] === "chama") {
+      const result = await homologateForecast(rest.includes("--send"));
+      console.log(JSON.stringify(result, null, 2));
+      if (result.problems.length) process.exitCode = 1;
+      break;
+    }
     await replayDate(rest[0] ?? "2026-06-13");
     console.log("Replay done.");
     break;
   }
   case "predict": {
-    const { table } = await ratingsNow();
+    const { all, table } = await ratingsNow();
     const [home, away] = [rest[0], rest[1]];
     if (!home || !away) { console.error("usage: predict <Home> <Away>"); break; }
-    console.log(predictMatch(table, home, away));
+    console.log(predictMatch(table, home, away, all));
     break;
   }
   case "scorers": {
@@ -42,7 +50,7 @@ switch (cmd) {
   }
   case "details": {
     const q = (rest[0] ?? "").toLowerCase();
-    const e = (await seasonEvents()).find((x) => x.strEvent.toLowerCase().includes(q));
+    const e = (await mergedSeasonEvents()).find((x) => x.strEvent.toLowerCase().includes(q));
     if (!e) { console.error(`no event matching "${rest[0]}"`); break; }
     await postDetails(e);
     console.log(`Details sent: ${e.strEvent}`);
@@ -51,7 +59,7 @@ switch (cmd) {
   case "standings":
   case "tabela": {
     if (rest[0] === "--send") { await postStandings(); console.log("Standings sent."); break; }
-    console.log(fmtStandings(await leagueTable()));
+    console.log(await fmtCurrentStandings());
     break;
   }
   case "bracket":
@@ -60,14 +68,20 @@ switch (cmd) {
     console.log(await fmtKnockout());
     break;
   }
+  case "forecast":
+  case "chama": {
+    if (rest[0] === "--send") { await postTournamentProjection(); console.log("Tournament projection sent."); break; }
+    console.log(fmtTournamentProjection(await tournamentProjection()));
+    break;
+  }
   case "champion": {
     const { table, all } = await ratingsNow();
     const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];
     for (const c of championForecast(table, teams).slice(0, 10))
-      console.log(`${(c.prob * 100).toFixed(1)}%  ${c.team} (Elo ${c.elo})`);
+      console.log(`${(c.prob * 100).toFixed(1)}%  ${c.team} (Elo ${c.elo}, elenco +${c.playerQuality}, força ${c.strength})`);
     break;
   }
   default:
-    console.log("commands: menu [date] | track | homologate [date] | predict <H> <A> | champion | scorers [--send] | details <team> | standings [--send] | bracket [--send]");
-    console.log("season events:", (await seasonEvents()).length);
+    console.log("commands: menu [date] | track | homologate [date|forecast] [--send] | predict <H> <A> | champion | forecast [--send] | scorers [--send] | details <team> | standings [--send] | bracket [--send]");
+    console.log("merged events:", (await mergedSeasonEvents()).length);
 }

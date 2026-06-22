@@ -90,6 +90,27 @@ export async function eventsByDay(date: string): Promise<WcEvent[]> {
   return d.events ?? [];
 }
 
+function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function todayBRT(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
+/** Season feed plus recent day feeds. Day feed fixes stale season results/live status. */
+export async function mergedSeasonEvents(anchorDate = todayBRT(), daysBack = 7, daysForward = 1): Promise<WcEvent[]> {
+  const season = await seasonEvents();
+  const dates = Array.from({ length: daysBack + daysForward + 1 }, (_, i) => addDays(anchorDate, i - daysBack));
+  const dayFeeds = await Promise.all(dates.map((d) => eventsByDay(d).catch(() => [])));
+  const map = new Map<string, WcEvent>();
+  for (const e of season) map.set(e.idEvent, e);
+  for (const e of dayFeeds.flat()) map.set(e.idEvent, e);
+  return [...map.values()];
+}
+
 /** Full event record (lookupevent) — richer than the season feed. */
 export async function eventDetail(idEvent: string): Promise<WcEvent | null> {
   const d = await get<{ events: WcEvent[] | null }>(`/lookupevent.php?id=${idEvent}`);

@@ -19,10 +19,15 @@ function db(): Database {
   } catch {
     d = new Database(":memory:");
   }
-  d.exec("PRAGMA journal_mode = WAL;");
   // The CronJob shares this file with the tracker pod (same PVC); wait on a lock
   // instead of throwing SQLITE_BUSY when both write concurrently.
   d.exec("PRAGMA busy_timeout = 5000;");
+  try {
+    d.exec("PRAGMA journal_mode = WAL;");
+  } catch {
+    // Another process can hold the SQLite file during startup. Cache is best-effort;
+    // keep running with the default journal mode instead of failing the alert job.
+  }
   d.exec(`CREATE TABLE IF NOT EXISTS api_cache (
     path       TEXT PRIMARY KEY,
     body       TEXT NOT NULL,

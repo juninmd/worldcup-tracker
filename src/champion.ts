@@ -1,8 +1,10 @@
-import { rating } from "./elo.ts";
+import { playerQuality, rating, teamStrength } from "./elo.ts";
 
 export interface ChampionOdds {
   team: string;
   elo: number;
+  playerQuality: number;
+  strength: number;
   prob: number;
 }
 
@@ -16,11 +18,22 @@ export function championForecast(
 ): ChampionOdds[] {
   const uniq = [...new Set(teams)].filter(Boolean);
   const T = 90; // softmax temperature in Elo points
-  const scored = uniq.map((t) => ({ team: t, elo: Math.round(rating(table, t)) }));
-  const max = Math.max(...scored.map((s) => s.elo));
-  const exps = scored.map((s) => ({ ...s, w: Math.exp((s.elo - max) / T) }));
+  const scored = uniq.map((t) => ({
+    team: t,
+    elo: Math.round(rating(table, t)),
+    playerQuality: playerQuality(t),
+    strength: Math.round(teamStrength(table, t)),
+  }));
+  const max = Math.max(...scored.map((s) => s.strength));
+  const exps = scored.map((s) => ({ ...s, w: Math.exp((s.strength - max) / T) }));
   const sum = exps.reduce((a, b) => a + b.w, 0);
   return exps
-    .map((s) => ({ team: s.team, elo: s.elo, prob: s.w / sum }))
+    .map((s) => ({
+      team: s.team,
+      elo: s.elo,
+      playerQuality: s.playerQuality,
+      strength: s.strength,
+      prob: s.w / sum,
+    }))
     .sort((a, b) => b.prob - a.prob);
 }

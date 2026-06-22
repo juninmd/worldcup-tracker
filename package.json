@@ -9,6 +9,7 @@
     "track": "bun run src/cli.ts track",
     "predict": "bun run src/cli.ts predict",
     "champion": "bun run src/cli.ts champion",
+    "forecast": "bun run src/cli.ts forecast",
     "homologate": "bun run src/cli.ts homologate",
     "test": "bun test"
   },

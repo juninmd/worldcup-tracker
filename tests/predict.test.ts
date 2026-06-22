@@ -23,6 +23,26 @@ test("predictMatch: probabilities sum ~1 and favor stronger team", () => {
   expect(p.pHome + p.pDraw + p.pAway).toBeCloseTo(1, 2);
   expect(p.pHome).toBeGreaterThan(p.pAway);
   expect(p.homeGoals).toBeGreaterThanOrEqual(p.awayGoals);
+  expect(p.strengthHome).toBe(p.eloHome + p.playerQualityHome);
+});
+
+test("predictMatch: player quality improves equal-Elo strength", () => {
+  const table = { France: 1800, Paraguay: 1800 };
+  const p = predictMatch(table, "France", "Paraguay");
+  expect(p.playerQualityHome).toBeGreaterThan(p.playerQualityAway);
+  expect(p.strengthHome).toBeGreaterThan(p.strengthAway);
+  expect(p.pHome).toBeGreaterThan(p.pAway);
+});
+
+test("predictMatch: head-to-head history nudges matchup", () => {
+  const table = trainRatings([]);
+  const neutral = predictMatch(table, "Brazil", "Argentina");
+  const withH2h = predictMatch(table, "Brazil", "Argentina", [
+    ev("Brazil", "Argentina", "0", "2"),
+    ev("Argentina", "Brazil", "3", "1"),
+  ]);
+  expect(withH2h.pHome).toBeLessThan(neutral.pHome);
+  expect(withH2h.pAway).toBeGreaterThan(neutral.pAway);
 });
 
 test("training moves ratings on upsets", () => {
@@ -37,6 +57,7 @@ test("championForecast: normalized, ranked desc", () => {
   const odds = championForecast(table, ["Brazil", "Argentina", "Paraguay", "Qatar"]);
   expect(odds.reduce((s, o) => s + o.prob, 0)).toBeCloseTo(1, 5);
   expect(odds[0]!.prob).toBeGreaterThanOrEqual(odds[1]!.prob);
+  expect(odds[0]!.strength).toBe(odds[0]!.elo + odds[0]!.playerQuality);
 });
 
 test("outcomeOf parses result", () => {
