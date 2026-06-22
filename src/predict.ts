@@ -10,25 +10,28 @@ function poisson(lambda: number, k: number): number {
 }
 
 /** Expected goals for each side, derived from Elo win-expectancy. */
-function lambdas(eloHome: number, eloAway: number): [number, number] {
-  const we = expectancy(eloHome + hostAdvantage(), eloAway);
+function lambdas(eloHome: number, eloAway: number, neutral = false): [number, number] {
+  const hfa = neutral ? 0 : hostAdvantage();
+  const we = expectancy(eloHome + hfa, eloAway);
   const lh = Math.max(0.3, AVG_GOALS * 0.5 + (we - 0.5) * 2.4);
   const la = Math.max(0.3, AVG_GOALS * 0.5 - (we - 0.5) * 2.4);
   return [lh, la];
 }
 
-/** Poisson scoreline + 1X2 probabilities for a fixture. */
+/** Poisson scoreline + 1X2 probabilities for a fixture.
+ *  neutral=true skips home-field advantage (knockout/neutral-venue games). */
 export function predictMatch(
   table: Record<string, number>,
   home: string,
   away: string,
   history: WcEvent[] = [],
+  neutral = false,
 ): Prediction {
   const bias = h2hBias(home, away, history);
   const qh = playerQuality(home), qa = playerQuality(away);
   const strengthHome = teamStrength(table, home) + bias;
   const strengthAway = teamStrength(table, away) - bias;
-  const [lh, la] = lambdas(strengthHome, strengthAway);
+  const [lh, la] = lambdas(strengthHome, strengthAway, neutral);
 
   let pHome = 0, pDraw = 0, pAway = 0;
   let best = -1, bh = 0, ba = 0;

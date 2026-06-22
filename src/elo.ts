@@ -26,7 +26,7 @@ const K = 30;
 // Squad quality prior: compact estimate of elite-player depth/top-end talent.
 // Kept separate from FIFA/Elo so messages can show both factors.
 const PLAYER_QUALITY: Record<string, number> = {
-  France: 58, England: 54, Brazil: 52, Spain: 50, Argentina: 48, Portugal: 47,
+  France: 58, England: 54, Argentina: 54, Spain: 52, Brazil: 50, Portugal: 47,
   Germany: 42, Netherlands: 40, Italy: 39, Belgium: 36, Morocco: 33,
   Uruguay: 32, Croatia: 30, Colombia: 29, Denmark: 27, Switzerland: 26,
   Norway: 26, Japan: 24, USA: 23, Senegal: 23, Ecuador: 22, Mexico: 22,

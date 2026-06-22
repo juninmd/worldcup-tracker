@@ -170,7 +170,7 @@ function buildOfficialBracket(
     groups.get(g)?.[pos]?.team ?? `?${g}${pos + 1}`;
 
   const makeMatch = (h: string, a: string, round: string): ProjectedMatch => {
-    const pred = predictMatch(table, h, a, history);
+    const pred = predictMatch(table, h, a, history, true); // neutral venue
     return { round, home: h, away: a, prediction: pred, winner: winner(h, a, pred, table) };
   };
 
