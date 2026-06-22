@@ -1,5 +1,5 @@
 import type { Prediction, WcEvent } from "./types.ts";
-import { canonicalTeam, expectancy, fifaRank, hostAdvantage, playerQuality, teamStrength } from "./elo.ts";
+import { canonicalTeam, expectancy, fifaRank, hostAdvantage, injuryPenalty, playerQuality, teamStrength } from "./elo.ts";
 
 const AVG_GOALS = 2.6; // typical total goals per WC match
 
@@ -20,18 +20,24 @@ function lambdas(eloHome: number, eloAway: number, neutral = false): [number, nu
 
 /** Poisson scoreline + 1X2 probabilities for a fixture.
  *  All WC 2026 matches are on neutral ground — default neutral=true.
- *  Pass neutral=false only for home/away fixtures outside a WC context. */
+ *  lineupPen carries confirmed-lineup absence penalties (from injuries.ts);
+ *  stacks on top of the static injuryPenalty() already in teamStrength(). */
 export function predictMatch(
   table: Record<string, number>,
   home: string,
   away: string,
   history: WcEvent[] = [],
   neutral = true,
+  lineupPen?: { home: number; away: number },
 ): Prediction {
   const bias = h2hBias(home, away, history);
-  const qh = playerQuality(home), qa = playerQuality(away);
-  const strengthHome = teamStrength(table, home) + bias;
-  const strengthAway = teamStrength(table, away) - bias;
+  const penH = lineupPen?.home ?? 0;
+  const penA = lineupPen?.away ?? 0;
+  // Effective player quality: base − static absence − confirmed lineup absence
+  const qh = Math.max(0, playerQuality(home) - injuryPenalty(home) - penH);
+  const qa = Math.max(0, playerQuality(away) - injuryPenalty(away) - penA);
+  const strengthHome = teamStrength(table, home) + bias - penH;
+  const strengthAway = teamStrength(table, away) - bias - penA;
   const [lh, la] = lambdas(strengthHome, strengthAway, neutral);
 
   let pHome = 0, pDraw = 0, pAway = 0;
@@ -53,8 +59,8 @@ export function predictMatch(
     pAway: round(pAway),
     eloHome: Math.round(strengthHome - qh),
     eloAway: Math.round(strengthAway - qa),
-    playerQualityHome: qh,
-    playerQualityAway: qa,
+    playerQualityHome: Math.round(qh),
+    playerQualityAway: Math.round(qa),
     strengthHome: Math.round(strengthHome),
     strengthAway: Math.round(strengthAway),
     fifaRankHome: fifaRank(home) ?? undefined,

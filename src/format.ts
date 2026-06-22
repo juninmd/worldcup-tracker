@@ -77,7 +77,11 @@ function ctx(e: WcEvent): string {
   return bits.length ? `🏁 ${bits.join(" · ")}` : "";
 }
 
-export function fmtPrematch(e: WcEvent, p: Prediction): string {
+export function fmtPrematch(
+  e: WcEvent,
+  p: Prediction,
+  absences?: { home: { name: string; weight: number }[]; away: { name: string; weight: number }[] },
+): string {
   const fav = p.pHome >= p.pAway ? e.strHomeTeam : e.strAwayTeam;
   const rankLine = (p.fifaRankHome && p.fifaRankAway)
     ? `🌍 Ranking FIFA: ${flag(e.strHomeTeam)} *#${p.fifaRankHome}* ${e.strHomeTeam} vs ${e.strAwayTeam} *#${p.fifaRankAway}* ${flag(e.strAwayTeam)}`
@@ -88,6 +92,13 @@ export function fmtPrematch(e: WcEvent, p: Prediction): string {
     : "";
   const eloDiff = Math.abs(p.strengthHome - p.strengthAway);
   const dominance = eloDiff > 150 ? "superioridade clara" : eloDiff > 80 ? "ligeiro favoritismo" : "jogo equilibrado";
+  const absLines: string[] = [];
+  if (absences?.home.length) {
+    absLines.push(`⚠️ Ausentes ${flag(e.strHomeTeam)} *${e.strHomeTeam}*: ${absences.home.map(a => a.name).join(", ")}`);
+  }
+  if (absences?.away.length) {
+    absLines.push(`⚠️ Ausentes ${flag(e.strAwayTeam)} *${e.strAwayTeam}*: ${absences.away.map(a => a.name).join(", ")}`);
+  }
   return [
     `🔮 *EXPECTATIVA DO JOGO*`,
     `${flag(e.strHomeTeam)} *${e.strHomeTeam}* x *${e.strAwayTeam}* ${flag(e.strAwayTeam)}`,
@@ -95,6 +106,7 @@ export function fmtPrematch(e: WcEvent, p: Prediction): string {
     venueLine(e),
     ctx(e),
     rankLine,
+    ...absLines,
     ``,
     `📊 Placar provável: *${p.homeGoals} x ${p.awayGoals}*  _(${dominance})_`,
     ``,

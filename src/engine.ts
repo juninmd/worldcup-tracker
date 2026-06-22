@@ -9,6 +9,7 @@ import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
+import { lineupPenalty, missingKeyPlayers } from "./injuries.ts";
 import { fallbackGoals } from "./flashscore.ts";
 import { postStandings } from "./standings.ts";
 import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
@@ -130,11 +131,20 @@ const eventCover = (e: WcEvent): string | null =>
 export async function postPrematch(e: WcEvent): Promise<void> {
   const { all, table } = await ratingsNow();
   const ev = (await eventDetail(e.idEvent)) ?? e;
+  const xi = await lineup(ev.idEvent);
+  const absences = {
+    home: missingKeyPlayers(xi, ev.strHomeTeam, true),
+    away: missingKeyPlayers(xi, ev.strAwayTeam, false),
+  };
+  const pen = {
+    home: lineupPenalty(xi, ev.strHomeTeam, true),
+    away: lineupPenalty(xi, ev.strAwayTeam, false),
+  };
   // Rich card: event artwork + both team crests as one album.
   const art = [eventCover(ev), ev.strHomeTeamBadge, ev.strAwayTeamBadge].filter((x): x is string => !!x);
   const caption = `⚽️ ${ev.strHomeTeam} x ${ev.strAwayTeam}`;
   if (art.length) await sendMediaGroup(art, caption);
-  await sendMessage(fmtPrematch(ev, predictMatch(table, ev.strHomeTeam, ev.strAwayTeam, all)));
+  await sendMessage(fmtPrematch(ev, predictMatch(table, ev.strHomeTeam, ev.strAwayTeam, all, true, pen), absences));
 }
 
 async function announceGoal(e: WcEvent, g: TimelineItem, score: string): Promise<void> {

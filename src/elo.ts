@@ -62,8 +62,20 @@ export function playerQuality(team: string): number {
   return PLAYER_QUALITY[canonicalTeam(team)] ?? 0;
 }
 
+// Confirmed long-term absences (injury / suspension / non-selection).
+// weight values match PLAYER_QUALITY scale. Update as tournament news arrives.
+// Example: { team: "France", player: "Kylian Mbappé", weight: 10 }
+export const ABSENCE_OVERRIDES: { team: string; player: string; weight: number }[] = [
+];
+
+export function injuryPenalty(team: string): number {
+  const t = canonicalTeam(team);
+  return ABSENCE_OVERRIDES.filter(a => canonicalTeam(a.team) === t)
+    .reduce((sum, a) => sum + a.weight, 0);
+}
+
 export function teamStrength(table: Record<string, number>, team: string): number {
-  return rating(table, team) + playerQuality(team);
+  return rating(table, team) + playerQuality(team) - injuryPenalty(team);
 }
 
 export function hostAdvantage(): number {
