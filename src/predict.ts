@@ -19,13 +19,14 @@ function lambdas(eloHome: number, eloAway: number, neutral = false): [number, nu
 }
 
 /** Poisson scoreline + 1X2 probabilities for a fixture.
- *  neutral=true skips home-field advantage (knockout/neutral-venue games). */
+ *  All WC 2026 matches are on neutral ground — default neutral=true.
+ *  Pass neutral=false only for home/away fixtures outside a WC context. */
 export function predictMatch(
   table: Record<string, number>,
   home: string,
   away: string,
   history: WcEvent[] = [],
-  neutral = false,
+  neutral = true,
 ): Prediction {
   const bias = h2hBias(home, away, history);
   const qh = playerQuality(home), qa = playerQuality(away);
