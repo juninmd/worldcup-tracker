@@ -1,4 +1,5 @@
 import type { TimelineItem, WcEvent } from "./types.ts";
+import { canonicalTeam } from "./elo.ts";
 
 // Fallback goal source: api.sportdb.dev (Flashscore proxy). Used only when the
 // primary TheSportsDB timeline is empty. Provides real scorer + assist + minute.
@@ -31,9 +32,9 @@ interface FsMatch {
 /** Find the Flashscore match id for a TheSportsDB event by team names. Checks
  *  the live feed first (in-progress) then the season results (finished). */
 async function findMatchId(e: WcEvent): Promise<string | null> {
-  const h = norm(e.strHomeTeam), a = norm(e.strAwayTeam);
+  const h = norm(canonicalTeam(e.strHomeTeam)), a = norm(canonicalTeam(e.strAwayTeam));
   const hit = (list: FsMatch[] | null) =>
-    (list ?? []).find((m) => norm(m.homeName) === h && norm(m.awayName) === a)?.eventId ?? null;
+    (list ?? []).find((m) => norm(canonicalTeam(m.homeName)) === h && norm(canonicalTeam(m.awayName)) === a)?.eventId ?? null;
 
   const live = hit(await get<FsMatch[]>(`${WC}/live`));
   if (live) return live;

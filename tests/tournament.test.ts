@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { knownTeams } from "../src/elo.ts";
+import { knownTeams, playerQuality, fifaRank } from "../src/elo.ts";
 import { WORLD_CUP_GROUPS } from "../src/tournament.ts";
 import { isKnockoutEvent } from "../src/standings.ts";
 import type { WcEvent } from "../src/types.ts";
@@ -12,10 +12,18 @@ test("WORLD_CUP_GROUPS: official fallback covers 12 groups and 48 unique teams",
   expect(new Set(teams).size).toBe(48);
 });
 
-test("WORLD_CUP_GROUPS: every fallback team has a seeded rating", () => {
+test("WORLD_CUP_GROUPS: every fallback team has seeded ratings, player quality, and FIFA rank", () => {
   const seeded = new Set(knownTeams());
-  const missing = Object.values(WORLD_CUP_GROUPS).flat().filter((team) => !seeded.has(team));
-  expect(missing).toEqual([]);
+  const teams = Object.values(WORLD_CUP_GROUPS).flat();
+
+  const missingSeed = teams.filter((team) => !seeded.has(team));
+  expect(missingSeed).toEqual([]);
+
+  const missingQuality = teams.filter((team) => !playerQuality(team) || playerQuality(team) <= 0);
+  expect(missingQuality).toEqual([]);
+
+  const missingRank = teams.filter((team) => fifaRank(team) === null);
+  expect(missingRank).toEqual([]);
 });
 
 test("isKnockoutEvent: group round numbers are not knockout", () => {

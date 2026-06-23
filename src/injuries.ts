@@ -1,77 +1,106 @@
-import type { LineupPlayer } from "./types.ts";
+import type { LineupPlayer, WcEvent } from "./types.ts";
+import { isFinished, lineup } from "./sportsdb.ts";
 
-// Key players per team: star whose absence from the confirmed starting XI
-// meaningfully hurts that team. weight is on the PLAYER_QUALITY scale
-// (world-class ≈ 8-10, regular starter ≈ 3-5).
-// variants are lowercase substrings matched against the SportsDB player name.
-export const KEY_PLAYERS: Record<string, { name: string; variants: string[]; weight: number }[]> = {
-  France:      [{ name: "Mbappé",      variants: ["mbappe", "mbappé", "kylian"],          weight: 10 },
-                { name: "Camavinga",   variants: ["camavinga"],                            weight:  4 },
-                { name: "Tchouaméni", variants: ["tchouam"],                              weight:  4 }],
-  England:     [{ name: "Bellingham",  variants: ["bellingham"],                          weight:  8 },
-                { name: "Saka",        variants: ["saka"],                                weight:  5 },
-                { name: "Palmer",      variants: ["palmer"],                              weight:  5 }],
-  Brazil:      [{ name: "Vinicius Jr", variants: ["vini", "vinícius", "vinicius"],        weight:  8 },
-                { name: "Rodrygo",     variants: ["rodrygo"],                             weight:  4 },
-                { name: "Endrick",     variants: ["endrick"],                             weight:  3 }],
-  Argentina:   [{ name: "Messi",       variants: ["messi"],                               weight:  8 },
-                { name: "J. Álvarez",  variants: ["alvarez", "álvarez"],                  weight:  6 },
-                { name: "E. Fernández",variants: ["enzo fernandez", "enzo fernández"],    weight:  5 },
-                { name: "Mac Allister",variants: ["mac allister", "macallister"],         weight:  4 }],
-  Spain:       [{ name: "Yamal",       variants: ["yamal"],                               weight:  8 },
-                { name: "Pedri",       variants: ["pedri"],                               weight:  6 },
-                { name: "Gavi",        variants: ["gavi"],                                weight:  5 }],
-  Portugal:    [{ name: "Ronaldo",     variants: ["ronaldo"],                             weight:  7 },
-                { name: "B. Félix",    variants: ["felix", "félix"],                      weight:  5 },
-                { name: "R. Leão",     variants: ["leao", "leão"],                        weight:  5 }],
-  Germany:     [{ name: "Musiala",     variants: ["musiala"],                             weight:  7 },
-                { name: "Wirtz",       variants: ["wirtz"],                               weight:  7 }],
-  Netherlands: [{ name: "Gakpo",       variants: ["gakpo"],                               weight:  5 },
-                { name: "F. De Jong",  variants: ["de jong"],                             weight:  5 }],
-  Morocco:     [{ name: "Hakimi",      variants: ["hakimi"],                              weight:  6 },
-                { name: "En-Nesyri",   variants: ["en-nesyri", "nesyri"],                 weight:  5 }],
-  USA:         [{ name: "Pulisic",     variants: ["pulisic"],                             weight:  7 },
-                { name: "Reyna",       variants: ["reyna"],                               weight:  4 }],
-  Mexico:      [{ name: "Lozano",      variants: ["lozano"],                              weight:  5 },
-                { name: "R. Jiménez",  variants: ["jimenez", "jiménez"],                  weight:  5 }],
-  Colombia:    [{ name: "L. Díaz",     variants: ["luis díaz", "luis diaz"],              weight:  7 },
-                { name: "Cuadrado",    variants: ["cuadrado"],                            weight:  4 }],
-  Uruguay:     [{ name: "D. Núñez",    variants: ["darwin", "nuñez", "núñez"],            weight:  7 },
-                { name: "Valverde",    variants: ["valverde"],                            weight:  6 }],
-  Japan:       [{ name: "Kubo",        variants: ["kubo"],                                weight:  6 },
-                { name: "Mitoma",      variants: ["mitoma"],                              weight:  5 }],
-  Senegal:     [{ name: "S. Mané",     variants: ["mane", "mané"],                        weight:  7 },
-                { name: "Koulibaly",   variants: ["koulibaly"],                           weight:  5 }],
-  Croatia:     [{ name: "Modrić",      variants: ["modric", "modrić"],                    weight:  7 },
-                { name: "Kovačić",     variants: ["kovacic", "kovačić"],                  weight:  5 }],
-  Norway:      [{ name: "Haaland",     variants: ["haaland"],                             weight: 10 }],
-  "Korea Republic": [{ name: "Son",    variants: ["son heung"],                           weight:  8 }],
-  Canada:      [{ name: "Davies",      variants: ["davies", "alphonso"],                  weight:  8 },
-                { name: "David",       variants: ["jonathan david"],                      weight:  6 }],
-};
+// Position → match-impact weight; used to score absences of regular starters.
+const POS_WEIGHT: [RegExp, number][] = [
+  [/forward|striker|winger|attacker|st\b|cf\b|lw\b|rw\b|ss\b/i, 5],
+  [/midfield|cam\b|am\b|cm\b|dm\b|lm\b|rm\b/i, 4],
+  [/defend|back|cb\b|lb\b|rb\b|lwb\b|rwb\b/i, 3],
+  [/goalkeeper|keeper|gk\b/i, 2],
+];
 
-/** Key players absent from the confirmed starting XI (lineup API response).
- *  Returns [] when lineup has no starters yet (not confirmed). */
+function posWeight(pos: string | null): number {
+  if (!pos) return 3;
+  for (const [re, w] of POS_WEIGHT) if (re.test(pos)) return w;
+  return 3;
+}
+
+function normalize(name: string): string {
+  return name.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+}
+
+export type StarterHistory = Map<
+  string, // "TeamName|PlayerName"
+  { starts: number; pos: string | null }
+>;
+
+let _cache: StarterHistory | null = null;
+let _cacheTime = 0;
+const CACHE_TTL = 15 * 60_000; // 15 min — refreshes once per polling window
+
+/** Builds a map of every player who started a finished match this tournament.
+ *  Relies on the SQLite lineup cache, so subsequent calls are near-instant. */
+export async function buildStarterHistory(events: WcEvent[]): Promise<StarterHistory> {
+  if (_cache && Date.now() - _cacheTime < CACHE_TTL) return _cache;
+
+  const history: StarterHistory = new Map();
+  for (const e of events.filter(isFinished)) {
+    const xi = await lineup(e.idEvent).catch((): LineupPlayer[] => []);
+    for (const p of xi) {
+      if ((p.strSubstitute ?? "").toLowerCase() !== "no") continue;
+      const team = (p.strHome ?? "").toLowerCase() === "yes" ? e.strHomeTeam : e.strAwayTeam;
+      const key = `${team}|${p.strPlayer}`;
+      const rec = history.get(key) ?? { starts: 0, pos: p.strPosition };
+      history.set(key, { starts: rec.starts + 1, pos: rec.pos });
+    }
+  }
+
+  _cache = history;
+  _cacheTime = Date.now();
+  return history;
+}
+
+/** Players who started enough past matches to be considered "regulars" but are
+ *  absent from the confirmed lineup for this match.
+ *  Returns [] when lineup is not yet confirmed (no starters found). */
 export function missingKeyPlayers(
   xi: LineupPlayer[],
   team: string,
   isHome: boolean,
+  history: StarterHistory,
 ): { name: string; weight: number }[] {
-  const keys = KEY_PLAYERS[team];
-  if (!keys) return [];
+  // How many times this team's most-frequent starter appeared
+  let maxStarts = 0;
+  for (const [key, rec] of history) {
+    const [t] = key.split("|") as [string];
+    if (t === team && rec.starts > maxStarts) maxStarts = rec.starts;
+  }
+  if (!maxStarts) return [];
 
-  const starters = xi
-    .filter(p => p.strHome === (isHome ? "Yes" : "No") && p.strSubstitute === "No")
-    .map(p => p.strPlayer.toLowerCase());
+  // "Regular" = started in ≥50% of the team's max-start count (minimum 1)
+  const threshold = Math.max(1, Math.floor(maxStarts * 0.5));
 
-  if (!starters.length) return []; // lineup not confirmed yet
+  const regulars = new Map<string, number>(); // playerName → weight
+  for (const [key, rec] of history) {
+    const [t, player] = key.split("|") as [string, string];
+    if (t === team && rec.starts >= threshold) {
+      regulars.set(player, posWeight(rec.pos));
+    }
+  }
+  if (!regulars.size) return [];
 
-  return keys
-    .filter(kp => !starters.some(s => kp.variants.some(v => s.includes(v))))
-    .map(kp => ({ name: kp.name, weight: kp.weight }));
+  // Confirmed starters in today's lineup (normalized for accent-tolerant matching)
+  const confirmed = xi
+    .filter(p => (p.strHome ?? "").toLowerCase() === (isHome ? "yes" : "no") && (p.strSubstitute ?? "").toLowerCase() === "no")
+    .map(p => normalize(p.strPlayer));
+  if (!confirmed.length) return []; // lineup not published yet
+
+  const missing: { name: string; weight: number }[] = [];
+  for (const [player, weight] of regulars) {
+    const norm = normalize(player);
+    const surname = norm.split(" ").at(-1)!;
+    const found = confirmed.some(c => c.includes(norm) || (surname.length > 3 && c.includes(surname)));
+    if (!found) missing.push({ name: player, weight });
+  }
+  return missing;
 }
 
-/** Total quality reduction from confirmed lineup absences. */
-export function lineupPenalty(xi: LineupPlayer[], team: string, isHome: boolean): number {
-  return missingKeyPlayers(xi, team, isHome).reduce((sum, p) => sum + p.weight, 0);
+/** Total quality penalty from absent regulars in the confirmed lineup. */
+export function lineupPenalty(
+  xi: LineupPlayer[],
+  team: string,
+  isHome: boolean,
+  history: StarterHistory,
+): number {
+  return missingKeyPlayers(xi, team, isHome, history).reduce((sum, p) => sum + p.weight, 0);
 }

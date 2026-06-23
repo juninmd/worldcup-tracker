@@ -10,7 +10,7 @@ export interface Scorer {
 }
 
 const isGoal = (tl: { strTimeline: string; strTimelineDetail: string | null }) =>
-  /goal/i.test(tl.strTimeline) && !/missed|disallow/i.test(tl.strTimelineDetail ?? "");
+  /goal/i.test(tl.strTimeline) && !/own|missed|disallow/i.test(tl.strTimelineDetail ?? "");
 
 /** Aggregate goals per player across every played match of the season. */
 export async function topScorers(): Promise<Scorer[]> {
@@ -21,10 +21,7 @@ export async function topScorers(): Promise<Scorer[]> {
   for (const e of played) {
     for (const g of await timeline(e.idEvent)) {
       if (!isGoal(g) || !g.strPlayer) continue;
-      const own = /own/i.test(g.strTimelineDetail ?? "");
-      const team = own
-        ? (g.strTeam === e.strHomeTeam ? e.strAwayTeam : e.strHomeTeam)
-        : (g.strTeam ?? "");
+      const team = g.strTeam ?? "";
       const key = `${g.strPlayer}|${team}`;
       const cur = tally.get(key) ?? { player: g.strPlayer, team, goals: 0 };
       cur.goals++;

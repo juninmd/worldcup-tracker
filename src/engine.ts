@@ -9,7 +9,7 @@ import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
-import { lineupPenalty, missingKeyPlayers } from "./injuries.ts";
+import { buildStarterHistory, lineupPenalty, missingKeyPlayers } from "./injuries.ts";
 import { fallbackGoals } from "./flashscore.ts";
 import { postStandings } from "./standings.ts";
 import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
@@ -132,13 +132,14 @@ export async function postPrematch(e: WcEvent): Promise<void> {
   const { all, table } = await ratingsNow();
   const ev = (await eventDetail(e.idEvent)) ?? e;
   const xi = await lineup(ev.idEvent);
+  const history = await buildStarterHistory(all);
   const absences = {
-    home: missingKeyPlayers(xi, ev.strHomeTeam, true),
-    away: missingKeyPlayers(xi, ev.strAwayTeam, false),
+    home: missingKeyPlayers(xi, ev.strHomeTeam, true, history),
+    away: missingKeyPlayers(xi, ev.strAwayTeam, false, history),
   };
   const pen = {
-    home: lineupPenalty(xi, ev.strHomeTeam, true),
-    away: lineupPenalty(xi, ev.strAwayTeam, false),
+    home: lineupPenalty(xi, ev.strHomeTeam, true, history),
+    away: lineupPenalty(xi, ev.strAwayTeam, false, history),
   };
   // Rich card: event artwork + both team crests as one album.
   const art = [eventCover(ev), ev.strHomeTeamBadge, ev.strAwayTeamBadge].filter((x): x is string => !!x);

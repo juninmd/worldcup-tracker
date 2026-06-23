@@ -2,6 +2,7 @@ import type { WcEvent, Prediction, Player, TimelineItem } from "./types.ts";
 import type { ChampionOdds } from "./champion.ts";
 import type { ProjectedMatch } from "./tournament.ts";
 import type { Scorer } from "./scorers.ts";
+import { canonicalTeam } from "./elo.ts";
 
 const FLAGS: Record<string, string> = {
   Brazil: "🇧🇷", Argentina: "🇦🇷", France: "🇫🇷", Spain: "🇪🇸", England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
@@ -259,14 +260,4 @@ export function fmtDailyMenu(
     `⚽️ *Artilheiros:*`, art, ``,
     `🏆 *Favoritos ao título (FIFA/Elo + elenco):*`, odds,
   ].filter((x) => x !== null).join("\n");
-}
-
-function canonicalTeam(name: string): string {
-  return name
-    .replace(/^(USA|United States).*/i, "USA")
-    .replace(/^South Korea$/i, "Korea Republic")
-    .replace(/^Czechia$/i, "Czech Republic")
-    .replace(/^Turkiye$/i, "Turkey")
-    .replace(/^Türkiye$/i, "Turkey")
-    .trim();
 }

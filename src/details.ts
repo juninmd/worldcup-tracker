@@ -21,6 +21,12 @@ const STAT_PT: Record<string, string> = {
   "Passes accurate": "Passes certos",
 };
 
+function parseStatValue(val: string | null): number {
+  if (!val) return 0;
+  const m = val.match(/^-?\d+(?:\.\d+)?/);
+  return m ? Number(m[0]) : 0;
+}
+
 /** Mini horizontal bar comparing two numbers. */
 function bar(h: number, a: number): string {
   const total = h + a || 1;
@@ -29,9 +35,9 @@ function bar(h: number, a: number): string {
 }
 
 function side(players: LineupPlayer[], home: boolean) {
-  const list = players.filter((p) => (p.strHome === "Yes") === home);
-  const xi = list.filter((p) => p.strSubstitute !== "Yes");
-  const subs = list.filter((p) => p.strSubstitute === "Yes");
+  const list = players.filter((p) => ((p.strHome ?? "").toLowerCase() === "yes") === home);
+  const xi = list.filter((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes");
+  const subs = list.filter((p) => (p.strSubstitute ?? "").toLowerCase() === "yes");
   const line = (p: LineupPlayer) =>
     `   ${p.intSquadNumber ? `#${p.intSquadNumber} ` : ""}${p.strPlayer}${p.strPosition ? ` _(${p.strPosition})_` : ""}`;
   const out: string[] = [];
@@ -53,7 +59,7 @@ export function fmtLineup(e: WcEvent, players: LineupPlayer[]): string {
 export function fmtStats(e: WcEvent, stats: EventStat[]): string {
   if (!stats.length) return "";
   const rows = stats.map((s) => {
-    const h = Number(s.intHome ?? 0), a = Number(s.intAway ?? 0);
+    const h = parseStatValue(s.intHome), a = parseStatValue(s.intAway);
     const name = STAT_PT[s.strStat] ?? s.strStat;
     return `*${s.intHome ?? "-"}* ${bar(h, a)} *${s.intAway ?? "-"}*\n_${name}_`;
   });
