@@ -37,7 +37,7 @@ const num = (v: string | null | undefined) => Number(v ?? 0) || 0;
 // A knockout fixture in the real feed (R32 → final). Group-stage events never match.
 const KNOCKOUT_RE = /final|round of|quarter|semi|oitavas|quartas|16|32/i;
 export function isKnockoutFixture(e: WcEvent): boolean {
-  return KNOCKOUT_RE.test(e.strEvent) || /final|round|quarter|semi/i.test(e.strStatus ?? "");
+  return KNOCKOUT_RE.test(e.strEvent) || KNOCKOUT_RE.test(e.strStatus ?? "");
 }
 
 // Official 2026 group draw. Source: FIFA/Al Jazeera schedule pages, June 2026.
