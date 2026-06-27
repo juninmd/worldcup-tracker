@@ -45,3 +45,5 @@ test("isKnockoutFixture: detects knockout rounds (incl. pt-BR labels), ignores g
   expect(isKnockoutFixture({ ...base, strEvent: "Match", strStatus: "Round 1" })).toBe(false);
   expect(isKnockoutFixture({ ...base, strEvent: "Match", strStatus: "Semifinal" })).toBe(true);
 });
+  expect(isKnockoutFixture({ ...base, strEvent: "Match", strStatus: "Semifinal" })).toBe(true);
+});
