@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { knownTeams, playerQuality, fifaRank } from "../src/elo.ts";
-import { WORLD_CUP_GROUPS } from "../src/tournament.ts";
+import { WORLD_CUP_GROUPS, isKnockoutFixture } from "../src/tournament.ts";
 import { isKnockoutEvent } from "../src/standings.ts";
 import type { WcEvent } from "../src/types.ts";
 
@@ -33,4 +33,15 @@ test("isKnockoutEvent: group round numbers are not knockout", () => {
   } as WcEvent;
   expect(isKnockoutEvent(event)).toBe(false);
   expect(isKnockoutEvent({ ...event, strEvent: "Round of 16: Germany vs Spain" })).toBe(true);
+});
+
+test("isKnockoutFixture: detects knockout rounds (incl. pt-BR labels), ignores group stage", () => {
+  const base = { strEvent: "", strStatus: "FT" } as WcEvent;
+  expect(isKnockoutFixture({ ...base, strEvent: "Group C: Brazil vs Morocco" })).toBe(false);
+  expect(isKnockoutFixture({ ...base, strEvent: "Round of 32: Brazil vs Norway" })).toBe(true);
+  expect(isKnockoutFixture({ ...base, strEvent: "Oitavas de final: Brazil vs Japan" })).toBe(true);
+  expect(isKnockoutFixture({ ...base, strEvent: "Quarter-final: France vs Brazil" })).toBe(true);
+  expect(isKnockoutFixture({ ...base, strEvent: "Final: Brazil vs Argentina" })).toBe(true);
+  expect(isKnockoutFixture({ ...base, strEvent: "Match", strStatus: "Round 1" })).toBe(false);
+  expect(isKnockoutFixture({ ...base, strEvent: "Match", strStatus: "Semifinal" })).toBe(true);
 });
