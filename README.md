@@ -20,6 +20,7 @@ camisa e resumo do jogador**, e comparação **expectativa × realidade** no fim
 - 🧠 **Treinamento** — ratings Elo partem de uma base e são ajustados após cada resultado real
   (peso por saldo de gols), refinando previsões conforme a Copa avança.
 - 🧩 **Fallback oficial de grupos** — quando o feed gratuito vem parcial, a simulação usa os 12 grupos oficiais da Copa 2026 e substitui os jogos por resultados reais assim que aparecem.
+- ✅ **Chave com dados reais** — assim que um confronto de mata-mata (Rodada de 32 → final) termina, o placar e o vencedor reais sobrescrevem a projeção e propagam para as rodadas seguintes (✅ real · 🔮 projeção). Pênaltis/prorrogação são sinalizados no fim de jogo.
 
 ## Configuração
 
