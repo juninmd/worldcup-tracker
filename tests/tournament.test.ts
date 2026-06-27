@@ -42,4 +42,6 @@ test("isKnockoutFixture: detects knockout rounds (incl. pt-BR labels), ignores g
   expect(isKnockoutFixture({ ...base, strEvent: "Oitavas de final: Brazil vs Japan" })).toBe(true);
   expect(isKnockoutFixture({ ...base, strEvent: "Quarter-final: France vs Brazil" })).toBe(true);
   expect(isKnockoutFixture({ ...base, strEvent: "Final: Brazil vs Argentina" })).toBe(true);
+  expect(isKnockoutFixture({ ...base, strEvent: "Match", strStatus: "Round 1" })).toBe(false);
+  expect(isKnockoutFixture({ ...base, strEvent: "Match", strStatus: "Semifinal" })).toBe(true);
 });
