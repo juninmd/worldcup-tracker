@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 const FILE = new URL("../data/state.json", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
 interface State {
-  postedGoals: string[]; // `${idEvent}:${minute}:${player}`
+  postedGoals: string[]; // `${idEvent}:${side}:${ordinal}`
   prematchPosted: string[]; // idEvent
   fulltimePosted: string[]; // idEvent
 }

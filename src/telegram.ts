@@ -45,11 +45,15 @@ export function sendMessage(text: string, preview = false): Promise<void> {
 
 export async function sendPhoto(photoUrl: string, caption: string): Promise<void> {
   try {
-    await call("sendPhoto", { photo: photoUrl, caption, parse_mode: "Markdown" });
+    await sendPhotoStrict(photoUrl, caption);
   } catch {
     // Image URL rejected by Telegram → fall back to text so the alert still lands.
     await sendMessage(caption);
   }
+}
+
+export function sendPhotoStrict(photoUrl: string, caption: string): Promise<void> {
+  return call("sendPhoto", { photo: photoUrl, caption, parse_mode: "Markdown" });
 }
 
 /** Photo album (2–10 images) with the caption on the first item — used to show
@@ -67,4 +71,15 @@ export async function sendMediaGroup(photoUrls: string[], caption: string): Prom
   } catch {
     await sendMessage(caption); // album rejected → keep the text alert
   }
+}
+
+export async function sendMediaGroupStrict(photoUrls: string[], caption: string): Promise<void> {
+  const photos = photoUrls.filter(Boolean).slice(0, 10);
+  if (photos.length < 2) {
+    if (photos[0]) return sendPhotoStrict(photos[0], caption);
+    throw new Error("sendMediaGroupStrict requires at least one photo");
+  }
+  const media = photos.map((photo, i) =>
+    i === 0 ? { type: "photo", media: photo, caption, parse_mode: "Markdown" } : { type: "photo", media: photo });
+  await call("sendMediaGroup", { media });
 }

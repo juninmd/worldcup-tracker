@@ -119,6 +119,13 @@ type FifaSquad = {
 type FifaSquadsResponse = { Results: FifaSquad[] };
 type JsonRecord = Record<string, unknown>;
 
+export interface FifaEndpointHealth {
+  name: string;
+  path: string;
+  ok: boolean;
+  count: number;
+}
+
 function text(value?: Localized[] | null): string {
   return value?.find((v) => v.Locale.toLowerCase() === "en-gb")?.Description ?? value?.[0]?.Description ?? "";
 }
@@ -298,8 +305,44 @@ async function fifaTimeline(idEvent: string): Promise<FifaTimelineEvent[]> {
   return d.Event ?? [];
 }
 
+export async function fifaEndpointHealth(): Promise<FifaEndpointHealth[]> {
+  const events = await seasonEvents();
+  const squads = await fifaSquads();
+  const finished = events.find(isFinished);
+  const live = events.find(isLive);
+  const timelineEvents = finished ? await fifaTimeline(finished.idEvent).catch(() => []) : [];
+  const livePayload = live ? await fifaLiveMatch(live.idEvent).catch(() => null) : null;
+  return [
+    {
+      name: "calendar",
+      path: `/calendar/matches?idSeason=${FIFA_SEASON_ID}&idCompetition=${FIFA_COMPETITION_ID}&count=120`,
+      ok: events.length === 104,
+      count: events.length,
+    },
+    {
+      name: "squads",
+      path: `/teams/squads/all/${FIFA_COMPETITION_ID}/${FIFA_SEASON_ID}`,
+      ok: squads.length === 48 && squads.every((s) => s.Players.length >= 23),
+      count: squads.reduce((sum, squad) => sum + squad.Players.length, 0),
+    },
+    {
+      name: "timeline",
+      path: finished ? `/timelines/${finished.idEvent}` : "/timelines/{IdMatch}",
+      ok: timelineEvents.length > 0,
+      count: timelineEvents.length,
+    },
+    {
+      name: "live",
+      path: live ? `/live/football/${live.idEvent}` : "/live/football/{IdMatch}",
+      ok: live ? !!livePayload : true,
+      count: livePayload ? 1 : 0,
+    },
+  ];
+}
+
 async function fifaLiveMatch(idEvent: string): Promise<unknown | null> {
   const urls = [
+    `${FIFA_BASE}/live/football/${idEvent}`,
     `${FIFA_BASE}/live/football/${FIFA_COMPETITION_ID}/${FIFA_SEASON_ID}/en/${idEvent}`,
     `${FIFA_BASE}/live/football/${FIFA_COMPETITION_ID}/${FIFA_SEASON_ID}/${idEvent}/en`,
   ];
@@ -442,6 +485,33 @@ export function mapFifaLiveLineup(payload: unknown): LineupPlayer[] {
   });
 }
 
+async function withSquadPhotos(players: LineupPlayer[]): Promise<LineupPlayer[]> {
+  const missing = players.filter((p) => !p.strThumb);
+  if (!missing.length) return players;
+  const squads = await fifaSquads().catch(() => []);
+  const byId = new Map<string, FifaPlayer>();
+  const byName = new Map<string, FifaPlayer>();
+  for (const squad of squads) {
+    for (const player of squad.Players) {
+      byId.set(player.IdPlayer, player);
+      byName.set(normalizeName(text(player.PlayerName)), player);
+      if (text(player.ShortName)) byName.set(normalizeName(text(player.ShortName)), player);
+    }
+  }
+  return players.map((p) => {
+    if (p.strThumb) return p;
+    const player = (p.idPlayer ? byId.get(p.idPlayer) : null) ?? byName.get(normalizeName(p.strPlayer));
+    return player?.PlayerPicture?.PictureUrl ? { ...p, strThumb: player.PlayerPicture.PictureUrl } : p;
+  });
+}
+
+export function isCompletePhotoLineup(players: LineupPlayer[]): boolean {
+  const starters = players.filter((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes");
+  const homeStarters = starters.filter((p) => p.strHome === "Yes");
+  const awayStarters = starters.filter((p) => p.strHome === "No");
+  return homeStarters.length === 11 && awayStarters.length === 11 && starters.every((p) => !!p.strThumb);
+}
+
 export async function timeline(idEvent: string): Promise<TimelineItem[]> {
   const event = await eventDetail(idEvent);
   if (!event) return [];
@@ -452,10 +522,8 @@ export async function lineup(idEvent?: string): Promise<LineupPlayer[]> {
   const event = idEvent ? await eventDetail(idEvent) : null;
   if (!event) return [];
   const live = await fifaLiveMatch(event.idEvent);
-  const published = mapFifaLiveLineup(live);
-  const homeStarters = published.filter((p) => p.strHome === "Yes" && p.strSubstitute === "No").length;
-  const awayStarters = published.filter((p) => p.strHome === "No" && p.strSubstitute === "No").length;
-  return homeStarters === 11 && awayStarters === 11 ? published : [];
+  const published = await withSquadPhotos(mapFifaLiveLineup(live));
+  return isCompletePhotoLineup(published) ? published : [];
 }
 
 export async function eventStats(idEvent?: string): Promise<EventStat[]> {

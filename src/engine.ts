@@ -3,8 +3,8 @@ import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSea
 import { trainRatings, outcomeOf } from "./elo.ts";
 import { predictMatch } from "./predict.ts";
 import { championForecast } from "./champion.ts";
-import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, fmtScoreGoal } from "./format.ts";
-import { sendMediaGroup, sendMessage, sendPhoto } from "./telegram.ts";
+import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch } from "./format.ts";
+import { sendMediaGroup, sendMessage, sendPhoto, sendPhotoStrict } from "./telegram.ts";
 import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
@@ -147,12 +147,12 @@ export async function postPrematch(e: WcEvent): Promise<void> {
   await sendMessage(fmtPrematch(ev, predictMatch(table, ev.strHomeTeam, ev.strAwayTeam, all, true, pen), absences));
 }
 
-async function announceGoal(e: WcEvent, g: TimelineItem, score: string): Promise<void> {
+async function announceGoal(e: WcEvent, g: TimelineItem, score: string): Promise<boolean> {
   const pl = g.idPlayer ? await findPlayerById(g.idPlayer) : g.strPlayer ? await findPlayer(g.strPlayer) : null;
-  const caption = fmtGoalCaption(g, e, pl, score);
   const img = pl?.strCutout || pl?.strThumb;
-  if (img) await sendPhoto(img, caption);
-  else await sendMessage(caption);
+  if (!img) return false;
+  await sendPhotoStrict(img, fmtGoalCaption(g, e, pl, score));
+  return true;
 }
 
 export async function postFulltime(e: WcEvent): Promise<void> {
@@ -180,39 +180,28 @@ async function trackedEvents(): Promise<WcEvent[]> {
   return [...map.values()];
 }
 
-/** Announce goals not yet posted. Score-driven for real-time guarantee: the
- *  score is the source of truth that a goal happened; the incident feed only
- *  enriches it with the scorer. Goals are keyed by side + ordinal, so a goal
- *  posted from the score is never re-posted when its scorer later publishes.
- *  Runs for live AND finished matches (flushes late goals before full-time). */
+/** Announce official FIFA timeline goals not yet posted.
+ *  The score feed can move before FIFA publishes the scorer, but Telegram must
+ *  not emit anonymous/partial goal alerts. */
 async function catchUpGoals(e: WcEvent, state: Awaited<ReturnType<typeof loadState>>): Promise<void> {
   const ev = (await eventDetail(e.idEvent)) ?? e;
   let goals = onlyGoals(await timeline(e.idEvent))
     .sort((a, b) => Number(a.intTime) - Number(b.intTime));
 
   const isHome = (g: TimelineItem) => g.strHome === "yes" || g.strTeam === ev.strHomeTeam;
-  const homeInc = goals.filter(isHome).length;
-  const awayInc = goals.length - homeInc;
-  // Score wins when ahead of the (often lagging) incident feed.
-  const sh = Math.max(Number(ev.intHomeScore) || 0, homeInc);
-  const sa = Math.max(Number(ev.intAwayScore) || 0, awayInc);
-
   let h = 0, a = 0, hi = 0, ai = 0;
-  const post = async (side: "H" | "A", run: string, body: () => Promise<void>) => {
+  const post = async (side: "H" | "A", body: () => Promise<boolean>) => {
     const ord = side === "H" ? ++hi : ++ai;
     const key = `${ev.idEvent}:${side}:${ord}`;
     if (state.postedGoals.includes(key)) return;
-    await body();
-    state.postedGoals.push(key);
+    if (await body()) state.postedGoals.push(key);
   };
 
   for (const g of goals) { // known scorers, progressively by minute
     const home = isHome(g);
     if (home) h++; else a++;
-    await post(home ? "H" : "A", `${h} x ${a}`, () => announceGoal(ev, g, `${h} x ${a}`));
+    await post(home ? "H" : "A", () => announceGoal(ev, g, `${h} x ${a}`));
   }
-  while (hi < sh) { h++; await post("H", `${h} x ${a}`, () => sendMessage(fmtScoreGoal(ev, ev.strHomeTeam, `${h} x ${a}`))); }
-  while (ai < sa) { a++; await post("A", `${h} x ${a}`, () => sendMessage(fmtScoreGoal(ev, ev.strAwayTeam, `${h} x ${a}`))); }
 }
 
 /** One polling pass over live matches: prematch, goals, full-time. */
@@ -284,8 +273,7 @@ export async function replayDate(date: string): Promise<void> {
     for (const g of goals) {
       const home = g.strHome === "yes" || g.strTeam === e.strHomeTeam;
       if (home) h++; else a++;
-      await announceGoal(e, g, `${h} x ${a}`);
-      await Bun.sleep(1200);
+      if (await announceGoal(e, g, `${h} x ${a}`)) await Bun.sleep(1200);
     }
     if (outcomeOf(e)) {
       await sendMessage(fmtFulltime(e, pred, goals));

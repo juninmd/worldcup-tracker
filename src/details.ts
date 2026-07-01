@@ -1,7 +1,7 @@
 import type { WcEvent, LineupPlayer, EventStat } from "./types.ts";
 import { eventStats, lineup } from "./sportsdb.ts";
 import { flag } from "./format.ts";
-import { sendMediaGroup, sendMessage } from "./telegram.ts";
+import { sendMediaGroupStrict, sendMessage } from "./telegram.ts";
 
 const STAT_PT: Record<string, string> = {
   "Shots on Goal": "Finalizações no gol",
@@ -85,12 +85,12 @@ export async function postDetails(e: WcEvent): Promise<void> {
   const lineupMsg = fmtLineup(e, ls);
   const statsMsg = fmtStats(e, st);
   if (lineupMsg) {
-    await sendMessage(lineupMsg);
     for (const [team, photos] of [[e.strHomeTeam, startersWithPhotos(ls, true)], [e.strAwayTeam, startersWithPhotos(ls, false)]] as const) {
       for (let i = 0; i < photos.length; i += 10) {
-        await sendMediaGroup(photos.slice(i, i + 10), `📸 Titulares ${team}`);
+        await sendMediaGroupStrict(photos.slice(i, i + 10), `📸 Titulares ${team}`);
       }
     }
+    await sendMessage(lineupMsg);
   }
   if (statsMsg) await sendMessage(statsMsg);
 }

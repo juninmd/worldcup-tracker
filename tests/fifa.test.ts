@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mapFifaLiveLineup, mapFifaMatch, mapFifaPlayer, mapFifaTimelineEvent } from "../src/sportsdb.ts";
+import { isCompletePhotoLineup, mapFifaLiveLineup, mapFifaMatch, mapFifaPlayer, mapFifaTimelineEvent } from "../src/sportsdb.ts";
 import { fmtLineup } from "../src/details.ts";
 import type { LineupPlayer, WcEvent } from "../src/types.ts";
 
@@ -228,4 +228,49 @@ test("mapFifaLiveLineup: maps complete official starters with photos", () => {
     intSquadNumber: "1",
     strThumb: "https://img.test/home-1.png",
   });
+  expect(isCompletePhotoLineup(players)).toBe(true);
+});
+
+test("isCompletePhotoLineup: rejects partial starters", () => {
+  const partial: LineupPlayer[] = [
+    ...Array.from({ length: 10 }, (_, i) => ({
+      strPlayer: `Home ${i + 1}`,
+      strPosition: null,
+      strSubstitute: "No",
+      strHome: "Yes",
+      intSquadNumber: String(i + 1),
+      strThumb: `https://img.test/home-${i + 1}.png`,
+    })),
+    ...Array.from({ length: 11 }, (_, i) => ({
+      strPlayer: `Away ${i + 1}`,
+      strPosition: null,
+      strSubstitute: "No",
+      strHome: "No",
+      intSquadNumber: String(i + 1),
+      strThumb: `https://img.test/away-${i + 1}.png`,
+    })),
+  ];
+
+  expect(isCompletePhotoLineup(partial)).toBe(false);
+});
+
+test("isCompletePhotoLineup: rejects starters without photos", () => {
+  const noPhotos: LineupPlayer[] = [
+    ...Array.from({ length: 11 }, (_, i) => ({
+      strPlayer: `Home ${i + 1}`,
+      strPosition: null,
+      strSubstitute: "No",
+      strHome: "Yes",
+      intSquadNumber: String(i + 1),
+    })),
+    ...Array.from({ length: 11 }, (_, i) => ({
+      strPlayer: `Away ${i + 1}`,
+      strPosition: null,
+      strSubstitute: "No",
+      strHome: "No",
+      intSquadNumber: String(i + 1),
+    })),
+  ];
+
+  expect(isCompletePhotoLineup(noPhotos)).toBe(false);
 });

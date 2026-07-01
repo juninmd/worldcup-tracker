@@ -19,6 +19,11 @@ Contrato validado pelo `homologate full`:
 - Jogos ao vivo presentes no snapshot FIFA.
 - Estatisticas de time derivadas da timeline FIFA.
 - Estatisticas de jogadores via artilharia, com fotos/perfis FIFA quando publicados.
+- Endpoints FIFA ativos no gate:
+  - `/calendar/matches?idSeason=285023&idCompetition=17&count=120`
+  - `/teams/squads/all/17/285023`
+  - `/timelines/{IdMatch}`
+  - `/live/football/{IdMatch}`
 - Artefatos de producao presentes: `Dockerfile` e `.github/workflows/deploy.yml`.
 - Forecast/chama: 12 grupos, 32 classificados, chave 16/8/4/2/1 e PNG valido.
 
@@ -33,6 +38,12 @@ Ultima evidencia local:
   "liveMatches": 2,
   "timelineChecked": 58,
   "timelineGoals": 172,
+  "endpoints": [
+    { "name": "calendar", "ok": true, "count": 104 },
+    { "name": "squads", "ok": true, "count": 1248 },
+    { "name": "timeline", "ok": true },
+    { "name": "live", "ok": true }
+  ],
   "playerStats": {
     "scorers": 119,
     "leader": "Lionel Messi",

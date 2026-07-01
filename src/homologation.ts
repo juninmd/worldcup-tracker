@@ -1,7 +1,7 @@
 import { tournamentFlameChartUrl } from "./charts.ts";
 import { sendMessage, sendPhoto } from "./telegram.ts";
 import { tournamentProjection } from "./tournament.ts";
-import { eventStats, isFinished, isLive, lineup, mergedSeasonEvents, timeline } from "./sportsdb.ts";
+import { eventStats, fifaEndpointHealth, isFinished, isLive, mergedSeasonEvents, squadPlayers, timeline, type FifaEndpointHealth } from "./sportsdb.ts";
 import { topScorers } from "./scorers.ts";
 import { existsSync } from "node:fs";
 
@@ -35,6 +35,7 @@ export interface FullHomologationResult {
     dockerfile: boolean;
     deployWorkflow: boolean;
   };
+  endpoints: FifaEndpointHealth[];
   forecast: HomologationResult;
   problems: string[];
 }
@@ -97,7 +98,7 @@ export async function homologateFull(send = false): Promise<FullHomologationResu
     const event = realEvents.find((e) => e.strHomeTeam === team || e.strAwayTeam === team);
     if (!event) return { team, players: 0 };
     const teamId = event.strHomeTeam === team ? event.idHomeTeam : event.idAwayTeam;
-    const players = await lineupForTeam(teamId, event.idEvent, team === event.strHomeTeam);
+    const players = (await squadPlayers(teamId)).length;
     return { team, players };
   }));
   const rosterPlayers = rosterByTeam.reduce((sum, row) => sum + row.players, 0);
@@ -137,6 +138,11 @@ export async function homologateFull(send = false): Promise<FullHomologationResu
   if (!production.dockerfile) problems.push("missing Dockerfile");
   if (!production.deployWorkflow) problems.push("missing deploy workflow");
 
+  const endpoints = await fifaEndpointHealth();
+  for (const endpoint of endpoints) {
+    if (!endpoint.ok) problems.push(`${endpoint.name} endpoint unhealthy: ${endpoint.path}`);
+  }
+
   const forecast = await homologateForecast(send);
   problems.push(...forecast.problems.map((p) => `forecast: ${p}`));
 
@@ -156,15 +162,12 @@ export async function homologateFull(send = false): Promise<FullHomologationResu
       leaderGoals: leader?.goals ?? 0,
     },
     production,
+    endpoints,
     forecast,
     problems,
   };
   if (send) await sendMessage(fmtFullHomologation(result));
   return result;
-}
-
-async function lineupForTeam(teamId: string, sampleEventId: string, home: boolean): Promise<number> {
-  return (await lineup(sampleEventId)).filter((p) => (p.strHome ?? "").toLowerCase() === (home ? "yes" : "no")).length;
 }
 
 function fmtFullHomologation(result: FullHomologationResult): string {
@@ -181,6 +184,7 @@ function fmtFullHomologation(result: FullHomologationResult): string {
     `Gols validados: *${result.timelineGoals}*`,
     `Artilheiros: *${result.playerStats.scorers}*`,
     `Líder: *${result.playerStats.leader ?? "-"}* (${result.playerStats.leaderGoals})`,
+    `Endpoints FIFA: ${result.endpoints.map((e) => `${e.ok ? "OK" : "FAIL"} ${e.name} (${e.count})`).join(" · ")}`,
     `Chama: *${result.forecast.champion}*`,
     "",
     result.problems.length ? `❌ Problemas: ${result.problems.join("; ")}` : "Sem problemas encontrados.",
