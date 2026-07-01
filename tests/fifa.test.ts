@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mapFifaMatch, mapFifaPlayer, mapFifaTimelineEvent } from "../src/sportsdb.ts";
+import { mapFifaLiveLineup, mapFifaMatch, mapFifaPlayer, mapFifaTimelineEvent } from "../src/sportsdb.ts";
 import { fmtLineup } from "../src/details.ts";
 import type { LineupPlayer, WcEvent } from "../src/types.ts";
 
@@ -188,7 +188,7 @@ test("mapFifaPlayer: maps official FIFA squad player with media", () => {
   expect(player.strDescriptionEN).toContain("Altura: 190cm");
 });
 
-test("fmtLineup: labels FIFA roster when starters are not published", () => {
+test("fmtLineup: does not publish roster as lineup when starters are missing", () => {
   const event = {
     strHomeTeam: "USA",
     strAwayTeam: "Australia",
@@ -200,7 +200,32 @@ test("fmtLineup: labels FIFA roster when starters are not published", () => {
 
   const out = fmtLineup(event, players);
 
-  expect(out).toContain("ELENCOS OFICIAIS FIFA");
-  expect(out).toContain("Elenco:");
-  expect(out).toContain("FIFA ainda não publicou XI inicial");
+  expect(out).toBe("");
+});
+
+test("mapFifaLiveLineup: maps complete official starters with photos", () => {
+  const makePlayer = (team: "home" | "away", n: number) => ({
+    Player: {
+      IdPlayer: `${team}-${n}`,
+      PlayerName: [{ Locale: "en-GB", Description: `${team.toUpperCase()} PLAYER ${n}` }],
+      PlayerPicture: { PictureUrl: `https://img.test/${team}-${n}.png` },
+    },
+    JerseyNum: n,
+    PositionLocalized: [{ Locale: "en-GB", Description: n === 1 ? "Goalkeeper" : "Defender" }],
+    Status: "Starter",
+  });
+
+  const players = mapFifaLiveLineup({
+    HomeTeam: { Lineup: Array.from({ length: 11 }, (_, i) => makePlayer("home", i + 1)) },
+    AwayTeam: { Lineup: Array.from({ length: 11 }, (_, i) => makePlayer("away", i + 1)) },
+  });
+
+  expect(players).toHaveLength(22);
+  expect(players.filter((p) => p.strHome === "Yes" && p.strSubstitute === "No")).toHaveLength(11);
+  expect(players.filter((p) => p.strHome === "No" && p.strSubstitute === "No")).toHaveLength(11);
+  expect(players[0]).toMatchObject({
+    strPlayer: "Home Player 1",
+    intSquadNumber: "1",
+    strThumb: "https://img.test/home-1.png",
+  });
 });
