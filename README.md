@@ -14,7 +14,7 @@ camisa e resumo do jogador**, e comparação **expectativa × realidade** no fim
 - 📅 **Menu do dia** — jogos de hoje (com previsão), últimos resultados, favoritos ao título.
 - 🏆 **Favorito ao título** — forecast por força (Elo) das seleções do torneio.
 - 🔥 **Chama da Copa diária** — simula grupos + mata-mata (32 classificados), placares e campeão; envia card PNG + texto no Telegram.
-- 📋 **Elencos oficiais FIFA** — 48 seleções, 1.248 jogadores, camisa, posição, altura/peso/foto quando publicado.
+- 📋 **Escalações oficiais FIFA** — só publica no Telegram quando o live FIFA traz titulares completos e foto para todos os jogadores da escalação.
 - 📈 **Estatísticas oficiais derivadas da timeline FIFA** — finalizações, escanteios, faltas e cartões com barra comparativa.
 - 🥇 **Artilharia** — ranking de gols da edição (trata gol contra).
 - 🧠 **Treinamento** — ratings Elo partem de uma base e são ajustados após cada resultado real
@@ -40,12 +40,12 @@ bun run src/cli.ts menu [YYYY-MM-DD]      # envia o menu do dia
 bun run src/cli.ts track                  # loop ao vivo (polling minuto-a-minuto)
 bun run src/cli.ts homologate 2026-06-13  # replay completo de uma data (homologação)
 bun run src/cli.ts homologate forecast    # valida grupos, mata-mata, PNG da chama e invariantes
-bun run src/cli.ts homologate full        # gate FIFA/prod: 104 jogos, 48 times, 1.248 atletas, gols, stats, live
+bun run src/cli.ts homologate full        # gate FIFA/prod: jogos, times, atletas, gols, stats, live, escalação/fotos
 bun run src/cli.ts predict Brazil Morocco # previsão de um confronto (stdout)
 bun run src/cli.ts champion               # ranking de favoritos ao título (stdout)
 bun run src/cli.ts forecast [--send]      # simulação grupos + mata-mata + campeão
 bun run src/cli.ts scorers [--send]       # artilharia (stdout, ou envia ao canal)
-bun run src/cli.ts details "Brazil vs Morocco"  # escalações + estatísticas no canal
+bun run src/cli.ts details "Brazil vs Morocco"  # escalação completa com fotos + estatísticas no canal
 bun test                                  # testes do motor de previsão
 ```
 
@@ -55,8 +55,8 @@ bun test                                  # testes do motor de previsão
 src/
   config.ts     env
   types.ts      tipos do domínio
-  sportsdb.ts   cliente FIFA API (jogos, resultados, live, timeline de gols, elencos, stats)
-  telegram.ts   sendMessage / sendPhoto (fallback p/ texto)
+  sportsdb.ts   cliente FIFA API (jogos, resultados, live, timeline de gols, escalações, stats)
+  telegram.ts   sendMessage / sendPhoto; envio estrito para gols/escalações com foto
   elo.ts        ratings Elo (seed + treino sobre resultados reais)
   predict.ts    modelo Poisson → placar + probabilidades
   champion.ts   forecast de campeão (softmax sobre Elo)

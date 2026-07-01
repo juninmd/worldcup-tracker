@@ -231,6 +231,34 @@ test("mapFifaLiveLineup: maps complete official starters with photos", () => {
   expect(isCompletePhotoLineup(players)).toBe(true);
 });
 
+test("mapFifaLiveLineup: maps FIFA live football players status 1/2", () => {
+  const makePlayer = (team: "home" | "away", n: number, status: 1 | 2) => ({
+    IdPlayer: `${team}-${n}`,
+    PlayerName: [{ Locale: "en-GB", Description: `${team.toUpperCase()} PLAYER ${n}` }],
+    PlayerPicture: { PictureUrl: `https://img.test/${team}-${n}.png` },
+    ShirtNumber: n,
+    Position: [{ Locale: "en-GB", Description: n === 1 ? "Goalkeeper" : "Defender" }],
+    Status: status,
+  });
+
+  const players = mapFifaLiveLineup({
+    HomeTeam: { Players: [
+      ...Array.from({ length: 11 }, (_, i) => makePlayer("home", i + 1, 1)),
+      makePlayer("home", 12, 2),
+    ] },
+    AwayTeam: { Players: [
+      ...Array.from({ length: 11 }, (_, i) => makePlayer("away", i + 1, 1)),
+      makePlayer("away", 12, 2),
+    ] },
+  });
+
+  expect(players).toHaveLength(24);
+  expect(players.filter((p) => p.strHome === "Yes" && p.strSubstitute === "No")).toHaveLength(11);
+  expect(players.filter((p) => p.strHome === "No" && p.strSubstitute === "No")).toHaveLength(11);
+  expect(players.filter((p) => p.strSubstitute === "Yes")).toHaveLength(2);
+  expect(isCompletePhotoLineup(players)).toBe(true);
+});
+
 test("isCompletePhotoLineup: rejects partial starters", () => {
   const partial: LineupPlayer[] = [
     ...Array.from({ length: 10 }, (_, i) => ({
@@ -273,4 +301,28 @@ test("isCompletePhotoLineup: rejects starters without photos", () => {
   ];
 
   expect(isCompletePhotoLineup(noPhotos)).toBe(false);
+});
+
+test("isCompletePhotoLineup: rejects reserves without photos", () => {
+  const withReserveMissingPhoto: LineupPlayer[] = [
+    ...Array.from({ length: 11 }, (_, i) => ({
+      strPlayer: `Home ${i + 1}`,
+      strPosition: null,
+      strSubstitute: "No",
+      strHome: "Yes",
+      intSquadNumber: String(i + 1),
+      strThumb: `https://img.test/home-${i + 1}.png`,
+    })),
+    ...Array.from({ length: 11 }, (_, i) => ({
+      strPlayer: `Away ${i + 1}`,
+      strPosition: null,
+      strSubstitute: "No",
+      strHome: "No",
+      intSquadNumber: String(i + 1),
+      strThumb: `https://img.test/away-${i + 1}.png`,
+    })),
+    { strPlayer: "Bench", strPosition: null, strSubstitute: "Yes", strHome: "Yes", intSquadNumber: "12" },
+  ];
+
+  expect(isCompletePhotoLineup(withReserveMissingPhoto)).toBe(false);
 });

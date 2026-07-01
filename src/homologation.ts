@@ -1,9 +1,11 @@
 import { tournamentFlameChartUrl } from "./charts.ts";
 import { sendMessage, sendPhoto } from "./telegram.ts";
 import { tournamentProjection } from "./tournament.ts";
-import { eventStats, fifaEndpointHealth, isFinished, isLive, mergedSeasonEvents, squadPlayers, timeline, type FifaEndpointHealth } from "./sportsdb.ts";
+import { eventStats, fifaEndpointHealth, findPlayerById, isFinished, isLive, lineup, mergedSeasonEvents, squadPlayers, timeline, type FifaEndpointHealth } from "./sportsdb.ts";
 import { topScorers } from "./scorers.ts";
 import { existsSync } from "node:fs";
+import { fmtGoalCaption, flag } from "./format.ts";
+import type { LineupPlayer, TimelineItem, WcEvent } from "./types.ts";
 
 export interface HomologationResult {
   groups: number;
@@ -36,8 +38,126 @@ export interface FullHomologationResult {
     deployWorkflow: boolean;
   };
   endpoints: FifaEndpointHealth[];
+  liveMedia: {
+    match: string | null;
+    lineupPlayers: number;
+    lineupPlayersWithPhoto: number;
+    starters: number;
+    goals: number;
+    goalsWithPlayerPhoto: number;
+  };
   forecast: HomologationResult;
   problems: string[];
+}
+
+export interface TelegramDryRunResult {
+  match: string | null;
+  status: string | null;
+  score: string | null;
+  lineup: {
+    players: number;
+    playersWithPhoto: number;
+    starters: number;
+    mediaGroups: number;
+    textChars: number;
+  };
+  goals: {
+    total: number;
+    withPlayerPhoto: number;
+    alerts: { player: string | null; score: string; photoOk: boolean; captionHasScore: boolean }[];
+  };
+  mediaChecks: { kind: "lineup" | "goal"; status: number; contentType: string | null }[];
+  problems: string[];
+}
+
+function onlyGoals(tl: TimelineItem[]): TimelineItem[] {
+  return tl.filter((t) => /goal/i.test(t.strTimeline) && !/missed|disallow/i.test(t.strTimelineDetail ?? ""));
+}
+
+function lineupText(e: WcEvent, players: LineupPlayer[]): string {
+  const line = (p: LineupPlayer) =>
+    `   ${p.intSquadNumber ? `#${p.intSquadNumber} ` : ""}${p.strPlayer}${p.strPosition ? ` _(${p.strPosition})_` : ""}`;
+  const side = (home: boolean) => {
+    const list = players.filter((p) => ((p.strHome ?? "").toLowerCase() === "yes") === home);
+    const xi = list.filter((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes");
+    const subs = list.filter((p) => (p.strSubstitute ?? "").toLowerCase() === "yes");
+    return [
+      home ? `${flag(e.strHomeTeam)} *${e.strHomeTeam}*` : `${flag(e.strAwayTeam)} *${e.strAwayTeam}*`,
+      "  Titulares:",
+      ...xi.map(line),
+      "  Reservas:",
+      ...subs.map(line),
+    ];
+  };
+  return [`📋 *ESCALAÇÕES OFICIAIS FIFA* — ${e.strHomeTeam} x ${e.strAwayTeam}`, "", ...side(true), "", ...side(false)].join("\n");
+}
+
+async function checkImage(url: string, kind: "lineup" | "goal"): Promise<{ kind: "lineup" | "goal"; status: number; contentType: string | null }> {
+  const res = await fetch(url, { method: "HEAD" }).catch(() => null);
+  return { kind, status: res?.status ?? 0, contentType: res?.headers.get("content-type") ?? null };
+}
+
+export async function homologateTelegramDryRun(): Promise<TelegramDryRunResult> {
+  const problems: string[] = [];
+  const live = (await mergedSeasonEvents()).filter(isLive);
+  const match = live[0] ?? null;
+  const players = match ? await lineup(match.idEvent) : [];
+  const goals = match ? onlyGoals(await timeline(match.idEvent)).sort((a, b) => Number(a.intTime) - Number(b.intTime)) : [];
+  const starters = players.filter((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes");
+  const photos = players.map((p) => p.strThumb).filter((x): x is string => !!x);
+  const text = match ? lineupText(match, players) : "";
+  const mediaChecks = await Promise.all(photos.map((url) => checkImage(url, "lineup")));
+
+  if (!match) problems.push("no live match available for Telegram dry-run");
+  if (match && starters.length !== 22) problems.push(`${match.strEvent} starters ${starters.length} != 22`);
+  if (players.length === 0) problems.push("missing complete live lineup");
+  if (photos.length !== players.length) problems.push(`lineup photos ${photos.length}/${players.length}`);
+
+  let h = 0, a = 0;
+  const alerts: TelegramDryRunResult["goals"]["alerts"] = [];
+  for (const goal of goals) {
+    const home = goal.strHome === "yes" || goal.strTeam === match?.strHomeTeam;
+    if (home) h++; else a++;
+    const score = `${h} x ${a}`;
+    const player = goal.idPlayer ? await findPlayerById(goal.idPlayer) : null;
+    const photo = player?.strCutout || player?.strThumb || null;
+    const caption = match ? fmtGoalCaption(goal, match, player, score) : "";
+    const check = photo ? await checkImage(photo, "goal") : { kind: "goal" as const, status: 0, contentType: null };
+    mediaChecks.push(check);
+    alerts.push({
+      player: goal.strPlayer,
+      score,
+      photoOk: check.status >= 200 && check.status < 400 && /image/i.test(check.contentType ?? ""),
+      captionHasScore: caption.includes(score),
+    });
+  }
+
+  const goalPhotoOk = alerts.filter((a) => a.photoOk).length;
+  const captionScoreOk = alerts.filter((a) => a.captionHasScore).length;
+  if (goalPhotoOk !== goals.length) problems.push(`goal photos ${goalPhotoOk}/${goals.length}`);
+  if (captionScoreOk !== goals.length) problems.push(`goal captions with score ${captionScoreOk}/${goals.length}`);
+  const badMedia = mediaChecks.filter((c) => !(c.status >= 200 && c.status < 400 && /image/i.test(c.contentType ?? "")));
+  if (badMedia.length) problems.push(`bad media URLs: ${badMedia.length}`);
+
+  return {
+    match: match?.strEvent ?? null,
+    status: match?.strStatus ?? null,
+    score: match ? `${match.intHomeScore ?? 0}-${match.intAwayScore ?? 0}` : null,
+    lineup: {
+      players: players.length,
+      playersWithPhoto: photos.length,
+      starters: starters.length,
+      mediaGroups: Math.ceil(photos.length / 10),
+      textChars: text.length,
+    },
+    goals: {
+      total: goals.length,
+      withPlayerPhoto: goalPhotoOk,
+      alerts,
+    },
+    mediaChecks,
+    problems,
+  };
 }
 
 export async function homologateForecast(send = false): Promise<HomologationResult> {
@@ -143,6 +263,32 @@ export async function homologateFull(send = false): Promise<FullHomologationResu
     if (!endpoint.ok) problems.push(`${endpoint.name} endpoint unhealthy: ${endpoint.path}`);
   }
 
+  const liveSample = live[0] ?? null;
+  const liveLineup = liveSample ? await lineup(liveSample.idEvent) : [];
+  const liveStarters = liveLineup.filter((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes");
+  const liveGoals = liveSample ? await timeline(liveSample.idEvent) : [];
+  const liveGoalPlayers = await Promise.all(liveGoals.map(async (goal) =>
+    goal.idPlayer ? await findPlayerById(goal.idPlayer) : null,
+  ));
+  const liveMedia = {
+    match: liveSample?.strEvent ?? null,
+    lineupPlayers: liveLineup.length,
+    lineupPlayersWithPhoto: liveLineup.filter((p) => !!p.strThumb).length,
+    starters: liveStarters.length,
+    goals: liveGoals.length,
+    goalsWithPlayerPhoto: liveGoalPlayers.filter((p) => !!(p?.strThumb || p?.strCutout)).length,
+  };
+  if (liveSample) {
+    if (liveMedia.starters !== 22) problems.push(`${liveSample.strEvent} live lineup starters ${liveMedia.starters} != 22`);
+    if (liveMedia.lineupPlayers === 0) problems.push(`${liveSample.strEvent} missing live lineup`);
+    if (liveMedia.lineupPlayersWithPhoto !== liveMedia.lineupPlayers) {
+      problems.push(`${liveSample.strEvent} live lineup photos ${liveMedia.lineupPlayersWithPhoto}/${liveMedia.lineupPlayers}`);
+    }
+    if (liveMedia.goalsWithPlayerPhoto !== liveMedia.goals) {
+      problems.push(`${liveSample.strEvent} live goal photos ${liveMedia.goalsWithPlayerPhoto}/${liveMedia.goals}`);
+    }
+  }
+
   const forecast = await homologateForecast(send);
   problems.push(...forecast.problems.map((p) => `forecast: ${p}`));
 
@@ -163,6 +309,7 @@ export async function homologateFull(send = false): Promise<FullHomologationResu
     },
     production,
     endpoints,
+    liveMedia,
     forecast,
     problems,
   };
@@ -185,6 +332,7 @@ function fmtFullHomologation(result: FullHomologationResult): string {
     `Artilheiros: *${result.playerStats.scorers}*`,
     `Líder: *${result.playerStats.leader ?? "-"}* (${result.playerStats.leaderGoals})`,
     `Endpoints FIFA: ${result.endpoints.map((e) => `${e.ok ? "OK" : "FAIL"} ${e.name} (${e.count})`).join(" · ")}`,
+    `Live mídia: ${result.liveMedia.match ?? "-"} · escalação ${result.liveMedia.lineupPlayersWithPhoto}/${result.liveMedia.lineupPlayers} fotos · gols ${result.liveMedia.goalsWithPlayerPhoto}/${result.liveMedia.goals} fotos`,
     `Chama: *${result.forecast.champion}*`,
     "",
     result.problems.length ? `❌ Problemas: ${result.problems.join("; ")}` : "Sem problemas encontrados.",

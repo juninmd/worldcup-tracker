@@ -426,6 +426,8 @@ function playerPhotoFromAny(row: JsonRecord): string | null {
 }
 
 function lineupStatus(row: JsonRecord): "No" | "Yes" | null {
+  if (row.Status === 1) return "No";
+  if (row.Status === 2) return "Yes";
   const values = [row.Status, row.LineupStatus, row.Type, row.PositionType, row.IsStarter, row.Starting]
     .map((v) => typeof v === "boolean" ? String(v) : asString(v)?.toLowerCase())
     .filter((v): v is string => !!v);
@@ -509,7 +511,7 @@ export function isCompletePhotoLineup(players: LineupPlayer[]): boolean {
   const starters = players.filter((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes");
   const homeStarters = starters.filter((p) => p.strHome === "Yes");
   const awayStarters = starters.filter((p) => p.strHome === "No");
-  return homeStarters.length === 11 && awayStarters.length === 11 && starters.every((p) => !!p.strThumb);
+  return homeStarters.length === 11 && awayStarters.length === 11 && players.every((p) => !!p.strThumb);
 }
 
 export async function timeline(idEvent: string): Promise<TimelineItem[]> {

@@ -46,10 +46,9 @@ function side(players: LineupPlayer[], home: boolean) {
   return out;
 }
 
-function startersWithPhotos(players: LineupPlayer[], home: boolean): string[] {
+function lineupPhotos(players: LineupPlayer[], home: boolean): string[] {
   return players
     .filter((p) => ((p.strHome ?? "").toLowerCase() === "yes") === home)
-    .filter((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes")
     .map((p) => p.strThumb)
     .filter((x): x is string => !!x);
 }
@@ -85,9 +84,9 @@ export async function postDetails(e: WcEvent): Promise<void> {
   const lineupMsg = fmtLineup(e, ls);
   const statsMsg = fmtStats(e, st);
   if (lineupMsg) {
-    for (const [team, photos] of [[e.strHomeTeam, startersWithPhotos(ls, true)], [e.strAwayTeam, startersWithPhotos(ls, false)]] as const) {
+    for (const [team, photos] of [[e.strHomeTeam, lineupPhotos(ls, true)], [e.strAwayTeam, lineupPhotos(ls, false)]] as const) {
       for (let i = 0; i < photos.length; i += 10) {
-        await sendMediaGroupStrict(photos.slice(i, i + 10), `📸 Titulares ${team}`);
+        await sendMediaGroupStrict(photos.slice(i, i + 10), `📸 Escalação ${team}`);
       }
     }
     await sendMessage(lineupMsg);
