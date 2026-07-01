@@ -32,6 +32,7 @@ export interface TournamentProjection {
 }
 
 const num = (v: string | null | undefined) => Number(v ?? 0) || 0;
+const matchNo = (e: WcEvent) => num(e.intRound);
 
 // Official 2026 group draw. Source: FIFA/Al Jazeera schedule pages, June 2026.
 export const WORLD_CUP_GROUPS: Record<string, string[]> = {
@@ -158,8 +159,93 @@ function qualifiersFrom(groups: Map<string, ProjectedTeam[]>, table: Record<stri
     teamStrength(table, b.team) - teamStrength(table, a.team));
 }
 
-// Build the official 2026 R32 bracket using group-pair cross-seeding, then
-// simulate subsequent rounds by pairing consecutive bracket winners.
+function isKnockoutEvent(e: WcEvent): boolean {
+  return /final|round of|quarter|semi|16|32/i.test(`${e.strStage ?? ""} ${e.strEvent}`);
+}
+
+function roundName(e: WcEvent): string {
+  const stage = e.strStage ?? "";
+  if (/round of 32/i.test(stage)) return "Rodada de 32";
+  if (/round of 16/i.test(stage)) return "Oitavas";
+  if (/quarter/i.test(stage)) return "Quartas";
+  if (/semi/i.test(stage)) return "Semifinal";
+  if (/final/i.test(stage) && !/third/i.test(stage)) return "Final";
+  return stage || e.strEvent;
+}
+
+function resolveRankedPlaceholder(
+  token: string | null | undefined,
+  groups: Map<string, ProjectedTeam[]>,
+  thirds: ProjectedTeam[],
+  usedThirds: Set<string>,
+): string | null {
+  if (!token) return null;
+  const ranked = token.match(/^([123])([A-L]+)$/i);
+  if (!ranked) return null;
+  const rank = Number(ranked[1]);
+  const groupCodes = ranked[2]!.toUpperCase().split("");
+  if (rank <= 2) return groups.get(groupCodes[0]!)?.[rank - 1]?.team ?? null;
+
+  const candidate = thirds.find((t) => groupCodes.includes(t.group) && !usedThirds.has(t.team));
+  if (!candidate) return null;
+  usedThirds.add(candidate.team);
+  return candidate.team;
+}
+
+function isPlaceholder(value: string | null | undefined): boolean {
+  return /^(?:W|RU)?\d+$|^[123][A-L]+$/i.test(value ?? "");
+}
+
+function buildFifaBracket(
+  events: WcEvent[],
+  groups: Map<string, ProjectedTeam[]>,
+  thirds: ProjectedTeam[],
+  table: Record<string, number>,
+  history: WcEvent[],
+): ProjectedMatch[][] | null {
+  const knockoutEvents = events
+    .filter(isKnockoutEvent)
+    .filter((e) => !/third place/i.test(e.strStage ?? ""))
+    .sort((a, b) => matchNo(a) - matchNo(b));
+  if (!knockoutEvents.length) return null;
+
+  const byRound = new Map<string, ProjectedMatch[]>();
+  const winners = new Map<string, string>();
+  const usedThirds = new Set<string>();
+
+  const resolve = (side: "home" | "away", e: WcEvent): string => {
+    const actual = side === "home" ? e.strHomeTeam : e.strAwayTeam;
+    const explicit = side === "home" ? e.strPlaceHolderA : e.strPlaceHolderB;
+    const token = explicit || actual;
+    if (actual && actual !== "TBD" && !isPlaceholder(actual)) return canonicalTeam(actual);
+
+    const win = token?.match(/^W(\d+)$/i);
+    if (win) return winners.get(win[1]!) ?? token!;
+    const ranked = resolveRankedPlaceholder(token, groups, thirds, usedThirds);
+    return ranked ?? token ?? "TBD";
+  };
+
+  for (const e of knockoutEvents) {
+    const home = resolve("home", e);
+    const away = resolve("away", e);
+    const round = roundName(e);
+    const predicted = predictMatch(table, home, away, history, true);
+    const hs = Number(e.intHomeScore);
+    const as = Number(e.intAwayScore);
+    const hasRealScore = !Number.isNaN(hs) && !Number.isNaN(as);
+    const pred = isFinished(e) && hasRealScore
+      ? { ...predicted, homeGoals: hs, awayGoals: as }
+      : predicted;
+    const projected: ProjectedMatch = { round, home, away, prediction: pred, winner: winner(home, away, pred, table) };
+    (byRound.get(round) ?? byRound.set(round, []).get(round)!).push(projected);
+    winners.set(String(matchNo(e)), projected.winner);
+  }
+
+  const order = ["Rodada de 32", "Oitavas", "Quartas", "Semifinal", "Final"];
+  return order.map((name) => byRound.get(name) ?? []).filter((round) => round.length);
+}
+
+// Fallback bracket used only before FIFA publishes knockout fixtures.
 function buildOfficialBracket(
   groups: Map<string, ProjectedTeam[]>,
   thirds: ProjectedTeam[],
@@ -240,7 +326,7 @@ export async function tournamentProjection(): Promise<TournamentProjection> {
     qualifiers = qualifiersFrom(groups, table);
   }
   const thirds = [...groups.values()].map((g) => g[2]).filter((x): x is ProjectedTeam => !!x);
-  const knockout = buildOfficialBracket(groups, thirds, table, all);
+  const knockout = buildFifaBracket(all, groups, thirds, table, all) ?? buildOfficialBracket(groups, thirds, table, all);
   const champion = knockout.at(-1)?.[0]?.winner ?? qualifiers[0]?.team ?? "indefinido";
   const brazilPath = brazilPathInKnockout(knockout);
   return { generatedAt: new Date().toISOString(), groups, qualifiers, knockout, champion, brazilPath };

@@ -7,7 +7,7 @@ import { fmtScorers, postTopScorers, topScorers } from "./scorers.ts";
 import { postDetails } from "./details.ts";
 import { fmtCurrentStandings, fmtKnockout, postStandings, postKnockout } from "./standings.ts";
 import { fmtTournamentProjection, tournamentProjection } from "./tournament.ts";
-import { homologateForecast } from "./homologation.ts";
+import { homologateForecast, homologateFull } from "./homologation.ts";
 
 function todayBRT(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -26,6 +26,12 @@ switch (cmd) {
     break;
   case "homologate":
   case "replay": {
+    if (rest[0] === "full" || rest[0] === "production" || rest[0] === "prod") {
+      const result = await homologateFull(rest.includes("--send"));
+      console.log(JSON.stringify(result, null, 2));
+      if (result.problems.length) process.exitCode = 1;
+      break;
+    }
     if (rest[0] === "forecast" || rest[0] === "chama") {
       const result = await homologateForecast(rest.includes("--send"));
       console.log(JSON.stringify(result, null, 2));
@@ -82,6 +88,6 @@ switch (cmd) {
     break;
   }
   default:
-    console.log("commands: menu [date] | track | homologate [date|forecast] [--send] | predict <H> <A> | champion | forecast [--send] | scorers [--send] | details <team> | standings [--send] | bracket [--send]");
+    console.log("commands: menu [date] | track | homologate [date|forecast|full] [--send] | predict <H> <A> | champion | forecast [--send] | scorers [--send] | details <team> | standings [--send] | bracket [--send]");
     console.log("merged events:", (await mergedSeasonEvents()).length);
 }

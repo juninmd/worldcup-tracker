@@ -27,6 +27,9 @@ export interface WcEvent {
   intAwayScore: string | null;
   strVenue: string | null;
   strLeague: string;
+  strStage?: string | null;
+  strPlaceHolderA?: string | null;
+  strPlaceHolderB?: string | null;
   strCity?: string | null;
   strCountry?: string | null;
   strGroup?: string | null;

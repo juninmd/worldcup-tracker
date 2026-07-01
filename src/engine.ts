@@ -10,7 +10,6 @@ import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
 import { buildStarterHistory, lineupPenalty, missingKeyPlayers } from "./injuries.ts";
-import { fallbackGoals } from "./flashscore.ts";
 import { postStandings } from "./standings.ts";
 import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
 import { writeFile } from "node:fs/promises";
@@ -35,7 +34,7 @@ export async function ratingsNow() {
 }
 
 const onlyGoals = (tl: TimelineItem[]) =>
-  tl.filter((t) => /goal/i.test(t.strTimeline) && !/own|missed|disallow/i.test(t.strTimelineDetail ?? ""));
+  tl.filter((t) => /goal/i.test(t.strTimeline) && !/missed|disallow/i.test(t.strTimelineDetail ?? ""));
 
 export async function postDailyMenu(date: string): Promise<void> {
   const { all, table } = await ratingsNow();
@@ -161,7 +160,6 @@ export async function postFulltime(e: WcEvent): Promise<void> {
   const ev = (await eventDetail(e.idEvent)) ?? e;
   const pred = predictMatch(table, ev.strHomeTeam, ev.strAwayTeam, all);
   let goals = onlyGoals(await timeline(ev.idEvent));
-  if (!goals.length) goals = await fallbackGoals(ev);
   await sendMessage(fmtFulltime(ev, pred, goals));
   await postDetails(ev);
   if (ev.strVideo) await sendMessage(`🎥 *Melhores lances*\n${ev.strVideo}`, true); // preview embeds the clip
@@ -191,7 +189,6 @@ async function catchUpGoals(e: WcEvent, state: Awaited<ReturnType<typeof loadSta
   const ev = (await eventDetail(e.idEvent)) ?? e;
   let goals = onlyGoals(await timeline(e.idEvent))
     .sort((a, b) => Number(a.intTime) - Number(b.intTime));
-  if (!goals.length) goals = await fallbackGoals(ev); // free key: no timeline → Flashscore
 
   const isHome = (g: TimelineItem) => g.strHome === "yes" || g.strTeam === ev.strHomeTeam;
   const homeInc = goals.filter(isHome).length;
@@ -283,7 +280,6 @@ export async function replayDate(date: string): Promise<void> {
 
     let goals = onlyGoals(await timeline(e.idEvent))
       .sort((a, b) => Number(a.intTime) - Number(b.intTime));
-    if (!goals.length) goals = await fallbackGoals(e);
     let h = 0, a = 0;
     for (const g of goals) {
       const home = g.strHome === "yes" || g.strTeam === e.strHomeTeam;

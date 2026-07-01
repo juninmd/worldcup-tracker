@@ -33,4 +33,5 @@ test("isKnockoutEvent: group round numbers are not knockout", () => {
   } as WcEvent;
   expect(isKnockoutEvent(event)).toBe(false);
   expect(isKnockoutEvent({ ...event, strEvent: "Round of 16: Germany vs Spain" })).toBe(true);
+  expect(isKnockoutEvent({ ...event, strStage: "Round of 32", strEvent: "Brazil vs Japan" })).toBe(true);
 });

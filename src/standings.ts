@@ -78,7 +78,7 @@ export async function fmtCurrentStandings(): Promise<string> {
 
 /** Projected qualifiers: top 2 of each group by current standings. */
 export function isKnockoutEvent(e: WcEvent): boolean {
-  return /final|round of|quarter|semi|16|32/i.test(e.strEvent);
+  return /final|round of|quarter|semi|16|32/i.test(`${e.strStage ?? ""} ${e.strEvent}`);
 }
 
 export async function fmtKnockout(): Promise<string> {

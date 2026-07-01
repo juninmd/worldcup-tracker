@@ -49,7 +49,7 @@ export function canonicalTeam(name: string): string {
     .replace(/^Bosnia-Herzegovina$/i, "Bosnia and Herzegovina")
     .replace(/^Turkiye$/i, "Turkey")
     .replace(/^Türkiye$/i, "Turkey")
-    .replace(/^DRC$/i, "DR Congo")
+    .replace(/^(DRC|Congo DR|D\.R\. Congo|Congo D\.R\.)$/i, "DR Congo")
     .replace(/^Curaçao$/i, "Curacao")
     .trim();
 }

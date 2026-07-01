@@ -42,17 +42,19 @@ function side(players: LineupPlayer[], home: boolean) {
     `   ${p.intSquadNumber ? `#${p.intSquadNumber} ` : ""}${p.strPlayer}${p.strPosition ? ` _(${p.strPosition})_` : ""}`;
   const out: string[] = [];
   if (xi.length) { out.push("  Titulares:"); out.push(...xi.map(line)); }
-  if (subs.length) { out.push("  Reservas:"); out.push(...subs.map(line)); }
+  if (subs.length) { out.push(xi.length ? "  Reservas:" : "  Elenco:"); out.push(...subs.map(line)); }
   return out;
 }
 
 export function fmtLineup(e: WcEvent, players: LineupPlayer[]): string {
   if (!players.length) return "";
   const home = side(players, true), away = side(players, false);
-  const lines = [`📋 *ESCALAÇÕES* — ${e.strHomeTeam} x ${e.strAwayTeam}`, ``];
+  const hasStarters = players.some((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes");
+  const title = hasStarters ? "ESCALAÇÕES" : "ELENCOS OFICIAIS FIFA";
+  const lines = [`📋 *${title}* — ${e.strHomeTeam} x ${e.strAwayTeam}`, ``];
   if (home.length) lines.push(`${flag(e.strHomeTeam)} *${e.strHomeTeam}*`, ...home, ``);
   if (away.length) lines.push(`${flag(e.strAwayTeam)} *${e.strAwayTeam}*`, ...away);
-  if (players.length < 11) lines.push(``, `_⚠ Escalação parcial (fonte: TheSportsDB)._`);
+  if (!hasStarters) lines.push(``, `_FIFA ainda não publicou XI inicial para este jogo; exibindo elenco oficial._`);
   return lines.join("\n");
 }
 

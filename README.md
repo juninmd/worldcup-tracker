@@ -4,7 +4,7 @@ Acompanhamento em tempo real da **Copa do Mundo 2026** com entregas no Telegram:
 expectativa de placar antes do jogo, alertas de gol minuto-a-minuto com **foto,
 camisa e resumo do jogador**, e comparação **expectativa × realidade** no fim.
 
-**Stack:** Bun + TypeScript. **Dados reais:** TheSportsDB (FIFA World Cup, liga `4429`).
+**Stack:** Bun + TypeScript. **Dados oficiais:** FIFA API/site (`api.fifa.com`, Copa do Mundo 2026 `IdCompetition=17`, `IdSeason=285023`).
 
 ## Recursos
 
@@ -14,8 +14,8 @@ camisa e resumo do jogador**, e comparação **expectativa × realidade** no fim
 - 📅 **Menu do dia** — jogos de hoje (com previsão), últimos resultados, favoritos ao título.
 - 🏆 **Favorito ao título** — forecast por força (Elo) das seleções do torneio.
 - 🔥 **Chama da Copa diária** — simula grupos + mata-mata (32 classificados), placares e campeão; envia card PNG + texto no Telegram.
-- 📋 **Escalações** — titulares/reservas com número e posição (fonte parcial no tier free).
-- 📈 **Estatísticas** — finalizações, posse etc. com barra comparativa.
+- 📋 **Elencos oficiais FIFA** — 48 seleções, 1.248 jogadores, camisa, posição, altura/peso/foto quando publicado.
+- 📈 **Estatísticas oficiais derivadas da timeline FIFA** — finalizações, escanteios, faltas e cartões com barra comparativa.
 - 🥇 **Artilharia** — ranking de gols da edição (trata gol contra).
 - 🧠 **Treinamento** — ratings Elo partem de uma base e são ajustados após cada resultado real
   (peso por saldo de gols), refinando previsões conforme a Copa avança.
@@ -39,6 +39,7 @@ bun run src/cli.ts menu [YYYY-MM-DD]      # envia o menu do dia
 bun run src/cli.ts track                  # loop ao vivo (polling minuto-a-minuto)
 bun run src/cli.ts homologate 2026-06-13  # replay completo de uma data (homologação)
 bun run src/cli.ts homologate forecast    # valida grupos, mata-mata, PNG da chama e invariantes
+bun run src/cli.ts homologate full        # gate FIFA/prod: 104 jogos, 48 times, 1.248 atletas, gols, stats, live
 bun run src/cli.ts predict Brazil Morocco # previsão de um confronto (stdout)
 bun run src/cli.ts champion               # ranking de favoritos ao título (stdout)
 bun run src/cli.ts forecast [--send]      # simulação grupos + mata-mata + campeão
@@ -53,7 +54,7 @@ bun test                                  # testes do motor de previsão
 src/
   config.ts     env
   types.ts      tipos do domínio
-  sportsdb.ts   cliente TheSportsDB (eventos, timeline de gols, jogador)
+  sportsdb.ts   cliente FIFA API (jogos, resultados, live, timeline de gols, elencos, stats)
   telegram.ts   sendMessage / sendPhoto (fallback p/ texto)
   elo.ts        ratings Elo (seed + treino sobre resultados reais)
   predict.ts    modelo Poisson → placar + probabilidades
