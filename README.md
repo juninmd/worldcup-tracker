@@ -17,6 +17,12 @@ camisa e resumo do jogador**, e comparação **expectativa × realidade** no fim
 - 📋 **Escalações oficiais FIFA** — só publica no Telegram quando o live FIFA traz titulares completos e foto para todos os jogadores da escalação.
 - 📈 **Estatísticas oficiais derivadas da timeline FIFA** — finalizações, escanteios, faltas e cartões com barra comparativa.
 - 🥇 **Artilharia** — ranking de gols da edição (trata gol contra).
+- 🟨 **Cartões** — ranking de cartões amarelos/vermelhos da edição, por jogador.
+- 🧠 **Análise da partida com IA** — Claude lê os dados oficiais (placar, estatísticas,
+  gols, cartões, titulares) e produz melhor em campo, destaques, quem merecia
+  vencer e quem mais errou, em português. Inclui mapa de calor de intensidade
+  do jogo por período (finalizações/escanteios/faltas/cartões/gols ao longo dos
+  minutos — a FIFA não expõe posicionamento em campo no feed gratuito).
 - 🧠 **Treinamento** — ratings Elo partem de uma base e são ajustados após cada resultado real
   (peso por saldo de gols), refinando previsões conforme a Copa avança.
 - 🧩 **Fallback oficial de grupos** — quando o feed gratuito vem parcial, a simulação usa os 12 grupos oficiais da Copa 2026 e substitui os jogos por resultados reais assim que aparecem.
@@ -29,6 +35,9 @@ cd worldcup-tracker
 bun install
 cp .env.example .env   # preencha TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID
 ```
+
+> **Análise com IA:** o comando `analysis` chama a API da Claude e exige
+> `ANTHROPIC_API_KEY` no `.env`. Os demais comandos funcionam sem essa chave.
 
 > **Importante:** adicione o bot ao canal/grupo de destino e dê permissão de
 > postar (admin, em canais). Sem isso o Telegram responde `chat not found`.
@@ -45,7 +54,9 @@ bun run src/cli.ts predict Brazil Morocco # previsão de um confronto (stdout)
 bun run src/cli.ts champion               # ranking de favoritos ao título (stdout)
 bun run src/cli.ts forecast [--send]      # simulação grupos + mata-mata + campeão
 bun run src/cli.ts scorers [--send]       # artilharia (stdout, ou envia ao canal)
+bun run src/cli.ts cards [--send]         # ranking de cartões da edição (stdout, ou envia ao canal)
 bun run src/cli.ts details "Brazil vs Morocco"  # escalação completa com fotos + estatísticas no canal
+bun run src/cli.ts analysis "Brazil vs Morocco" [--send]  # análise da partida com IA + mapa de calor
 bun test                                  # testes do motor de previsão
 ```
 
@@ -61,6 +72,10 @@ src/
   predict.ts    modelo Poisson → placar + probabilidades
   champion.ts   forecast de campeão (softmax sobre Elo)
   format.ts     mensagens pt-BR (menu, pré-jogo, gol, fim de jogo)
+  scorers.ts    artilharia da edição
+  cards.ts      ranking de cartões da edição
+  analysis.ts   análise da partida com IA (Claude) + mapa de calor de intensidade
+  charts.ts     cards PNG via QuickChart (artilharia, cartões, mapa de calor, chave, etc.)
   state.ts      dedup (gols/pré-jogo/fim já postados)
   engine.ts     orquestração: menu, poll ao vivo, replay
   cli.ts        entrypoint

@@ -11,10 +11,17 @@
     "champion": "bun run src/cli.ts champion",
     "forecast": "bun run src/cli.ts forecast",
     "homologate": "bun run src/cli.ts homologate",
+    "scorers": "bun run src/cli.ts scorers",
+    "cards": "bun run src/cli.ts cards",
+    "analysis": "bun run src/cli.ts analysis",
     "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.0",
+    "zod": "^4.4.3"
   }
 }

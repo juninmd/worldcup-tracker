@@ -1,5 +1,5 @@
 import { cacheGet, cachePut } from "./db.ts";
-import type { WcEvent, TimelineItem, Player, LineupPlayer, EventStat, TableRow } from "./types.ts";
+import type { WcEvent, TimelineItem, Player, LineupPlayer, EventStat, TableRow, CardEvent, IntensityBucket } from "./types.ts";
 
 const FIFA_BASE = "https://api.fifa.com/api/v3";
 const FIFA_COMPETITION_ID = "17";
@@ -295,6 +295,59 @@ export function mapFifaTimelineEvent(item: FifaTimelineEvent, e: WcEvent): Timel
     strAssist: null,
     strComment: description || null,
   };
+}
+
+export function mapFifaCardEvent(item: FifaTimelineEvent, e: WcEvent): CardEvent | null {
+  const kind = text(item.TypeLocalized);
+  const cardType = /red card/i.test(kind) ? "red" : /yellow card/i.test(kind) ? "yellow" : null;
+  if (!cardType) return null;
+  const description = text(item.EventDescription);
+  const team = item.IdTeam === e.idHomeTeam ? e.strHomeTeam : item.IdTeam === e.idAwayTeam ? e.strAwayTeam : null;
+  return {
+    idTimeline: item.EventId,
+    intTime: item.MatchMinute?.replace("'", "") ?? "",
+    strPlayer: playerFromDescription(description),
+    strTeam: team,
+    strHome: team === e.strHomeTeam ? "yes" : team === e.strAwayTeam ? "no" : null,
+    cardType,
+  };
+}
+
+/** Cartões (amarelo/vermelho) da partida, com jogador e minuto — derivado da timeline oficial FIFA. */
+export async function cardEvents(idEvent: string): Promise<CardEvent[]> {
+  const event = await eventDetail(idEvent);
+  if (!event) return [];
+  return (await fifaTimeline(idEvent)).map((item) => mapFifaCardEvent(item, event)).filter((x): x is CardEvent => !!x);
+}
+
+const INTENSITY_PERIODS: readonly (readonly [number, number])[] = [
+  [0, 15], [16, 30], [31, 45], [46, 60], [61, 75], [76, 999],
+];
+const INTENSITY_KIND = /Attempt at Goal|^Corner$|^Foul$|Yellow card|Red card|^(own goal|penalty goal|goal!?)$/i;
+
+/** Buckets timestamped match events (shots, corners, fouls, cards, goals) into
+ *  15-minute periods per side — a temporal "heat" of match intensity derived from
+ *  real, timestamped FIFA events (not pitch-position tracking, which the free feed lacks). */
+export function intensityBuckets(items: FifaTimelineEvent[], e: WcEvent): IntensityBucket[] {
+  return INTENSITY_PERIODS.map(([lo, hi]) => {
+    const label = hi === 999 ? `${lo}+` : `${lo}-${hi}`;
+    const inRange = items.filter((item) => {
+      if (!INTENSITY_KIND.test(text(item.TypeLocalized))) return false;
+      const minute = Number(item.MatchMinute?.replace("'", ""));
+      return !Number.isNaN(minute) && minute >= lo && minute <= hi;
+    });
+    return {
+      label,
+      home: inRange.filter((item) => item.IdTeam === e.idHomeTeam).length,
+      away: inRange.filter((item) => item.IdTeam === e.idAwayTeam).length,
+    };
+  });
+}
+
+export async function matchIntensity(idEvent: string): Promise<IntensityBucket[]> {
+  const event = await eventDetail(idEvent);
+  if (!event) return [];
+  return intensityBuckets(await fifaTimeline(idEvent), event);
 }
 
 async function fifaTimeline(idEvent: string): Promise<FifaTimelineEvent[]> {
