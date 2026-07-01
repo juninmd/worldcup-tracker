@@ -1,4 +1,4 @@
-import { isFinished, isLive, seasonEvents, timeline, findPlayer } from "./sportsdb.ts";
+import { isFinished, isLive, mergedSeasonEvents, timeline, findPlayer } from "./sportsdb.ts";
 import { flag } from "./format.ts";
 import { sendMessage, sendPhoto } from "./telegram.ts";
 import { scorersChartUrl } from "./charts.ts";
@@ -14,12 +14,14 @@ const isGoal = (tl: { strTimeline: string; strTimelineDetail: string | null }) =
 
 /** Aggregate goals per player across every played match of the season. */
 export async function topScorers(): Promise<Scorer[]> {
-  const all = await seasonEvents();
+  // Merged feed (season + recent day feeds) so live/just-finished matches count too.
+  const all = await mergedSeasonEvents();
   const played = all.filter((e) => isFinished(e) || isLive(e));
   const tally = new Map<string, Scorer>();
 
   for (const e of played) {
-    for (const g of await timeline(e.idEvent)) {
+    const goals = await timeline(e.idEvent);
+    for (const g of goals) {
       if (!isGoal(g) || !g.strPlayer) continue;
       const team = g.strTeam ?? "";
       const key = `${g.strPlayer}|${team}`;

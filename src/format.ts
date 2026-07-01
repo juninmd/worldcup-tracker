@@ -176,6 +176,8 @@ export function fmtScoreGoal(e: WcEvent, team: string, score: string): string {
 
 export function fmtFulltime(e: WcEvent, p: Prediction, scorers: TimelineItem[]): string {
   const h = Number(e.intHomeScore), a = Number(e.intAwayScore);
+  const status = (e.strStatus ?? "").toUpperCase();
+  const decider = status === "AET" ? " _(após prorrogação)_" : status === "PEN" ? " _(nos pênaltis)_" : "";
   const realRes = h > a ? e.strHomeTeam : h < a ? e.strAwayTeam : "Empate";
   const hitScore = h === p.homeGoals && a === p.awayGoals;
   const predRes = p.pHome >= p.pAway && p.pHome >= p.pDraw ? e.strHomeTeam
@@ -192,7 +194,7 @@ export function fmtFulltime(e: WcEvent, p: Prediction, scorers: TimelineItem[]):
     ? "⚡ *ZEBRA!* O azarão venceu." : "";
   return [
     `⏱ *FIM DE JOGO*`,
-    `${flag(e.strHomeTeam)} *${e.strHomeTeam} ${h} x ${a} ${e.strAwayTeam}* ${flag(e.strAwayTeam)}`,
+    `${flag(e.strHomeTeam)} *${e.strHomeTeam} ${h} x ${a} ${e.strAwayTeam}* ${flag(e.strAwayTeam)}${decider}`,
     `🕒 ${kickoff(e)}`,
     venueLine(e),
     ctx(e),

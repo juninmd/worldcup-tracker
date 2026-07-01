@@ -117,6 +117,7 @@ type FifaSquad = {
   Players: FifaPlayer[];
 };
 type FifaSquadsResponse = { Results: FifaSquad[] };
+type JsonRecord = Record<string, unknown>;
 
 function text(value?: Localized[] | null): string {
   return value?.find((v) => v.Locale.toLowerCase() === "en-gb")?.Description ?? value?.[0]?.Description ?? "";
@@ -297,6 +298,18 @@ async function fifaTimeline(idEvent: string): Promise<FifaTimelineEvent[]> {
   return d.Event ?? [];
 }
 
+async function fifaLiveMatch(idEvent: string): Promise<unknown | null> {
+  const urls = [
+    `${FIFA_BASE}/live/football/${FIFA_COMPETITION_ID}/${FIFA_SEASON_ID}/en/${idEvent}`,
+    `${FIFA_BASE}/live/football/${FIFA_COMPETITION_ID}/${FIFA_SEASON_ID}/${idEvent}/en`,
+  ];
+  for (const url of urls) {
+    const body = await getJson<unknown>(`fifa:${new URL(url).pathname}`, url).catch(() => null);
+    if (body) return body;
+  }
+  return null;
+}
+
 export function mapFifaPlayer(player: FifaPlayer, teamName: string): Player {
   const height = player.Height ? `Altura: ${player.Height}cm` : "";
   const weight = player.Weight ? `Peso: ${player.Weight}kg` : "";
@@ -334,7 +347,99 @@ export async function squadPlayers(teamId: string): Promise<LineupPlayer[]> {
       strSubstitute: "Yes",
       strHome: null,
       intSquadNumber: p.JerseyNum ? String(p.JerseyNum) : null,
+      idPlayer: p.IdPlayer,
+      strThumb: p.PlayerPicture?.PictureUrl ?? null,
     }));
+}
+
+function asRecord(value: unknown): JsonRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
+}
+
+function asString(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number") return String(value);
+  return null;
+}
+
+function localizedUnknown(value: unknown): string | null {
+  if (Array.isArray(value)) return text(value as Localized[]) || null;
+  return asString(value);
+}
+
+function playerNameFromAny(row: JsonRecord): string | null {
+  return localizedUnknown(row.PlayerName)
+    ?? localizedUnknown(row.Name)
+    ?? localizedUnknown(row.ShortName)
+    ?? localizedUnknown(row.DisplayName)
+    ?? localizedUnknown(row.FullName);
+}
+
+function playerPhotoFromAny(row: JsonRecord): string | null {
+  const direct = asString(row.PictureUrl) ?? asString(row.ImageUrl) ?? asString(row.PhotoUrl);
+  if (direct) return direct;
+  const pic = asRecord(row.PlayerPicture) ?? asRecord(row.Picture) ?? asRecord(row.Image);
+  return pic ? asString(pic.PictureUrl) ?? asString(pic.Url) ?? asString(pic.URL) : null;
+}
+
+function lineupStatus(row: JsonRecord): "No" | "Yes" | null {
+  const values = [row.Status, row.LineupStatus, row.Type, row.PositionType, row.IsStarter, row.Starting]
+    .map((v) => typeof v === "boolean" ? String(v) : asString(v)?.toLowerCase())
+    .filter((v): v is string => !!v);
+  if (values.some((v) => /starter|starting|first xi|lineup|^true$|^1$/.test(v))) return "No";
+  if (values.some((v) => /sub|bench|reserve|^false$/.test(v))) return "Yes";
+  return null;
+}
+
+function mapLineupRow(row: JsonRecord, home: boolean): LineupPlayer | null {
+  const player = asRecord(row.Player) ?? asRecord(row.Person) ?? row;
+  const name = playerNameFromAny(player);
+  if (!name) return null;
+  return {
+    strPlayer: playerFromDescription(`${name} (`) ?? name,
+    strPosition: localizedUnknown(row.PositionLocalized) ?? localizedUnknown(row.Position) ?? localizedUnknown(player.PositionLocalized) ?? null,
+    strSubstitute: lineupStatus(row) ?? lineupStatus(player),
+    strHome: home ? "Yes" : "No",
+    intSquadNumber: asString(row.JerseyNum) ?? asString(row.ShirtNumber) ?? asString(row.Number) ?? asString(player.JerseyNum),
+    idPlayer: asString(row.IdPlayer) ?? asString(player.IdPlayer),
+    strThumb: playerPhotoFromAny(player),
+  };
+}
+
+function collectLineupRows(value: unknown, home: boolean): LineupPlayer[] {
+  const out: LineupPlayer[] = [];
+  const visit = (node: unknown) => {
+    if (Array.isArray(node)) {
+      const mapped = node.map((x) => asRecord(x)).filter((x): x is JsonRecord => !!x).map((x) => mapLineupRow(x, home));
+      const players = mapped.filter((x): x is LineupPlayer => !!x);
+      if (players.filter((p) => p.strSubstitute === "No").length >= 8) out.push(...players);
+      else node.forEach(visit);
+      return;
+    }
+    const rec = asRecord(node);
+    if (!rec) return;
+    Object.values(rec).forEach(visit);
+  };
+  visit(value);
+  return out;
+}
+
+export function mapFifaLiveLineup(payload: unknown): LineupPlayer[] {
+  const root = asRecord(payload);
+  if (!root) return [];
+  const homeNodes = [root.Home, root.HomeTeam, root.home, root.homeTeam].filter(Boolean);
+  const awayNodes = [root.Away, root.AwayTeam, root.away, root.awayTeam].filter(Boolean);
+  const players = [
+    ...homeNodes.flatMap((node) => collectLineupRows(node, true)),
+    ...awayNodes.flatMap((node) => collectLineupRows(node, false)),
+  ];
+  const seen = new Set<string>();
+  return players.filter((p) => {
+    const key = `${p.strHome}:${p.idPlayer ?? p.strPlayer}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function timeline(idEvent: string): Promise<TimelineItem[]> {
@@ -346,14 +451,11 @@ export async function timeline(idEvent: string): Promise<TimelineItem[]> {
 export async function lineup(idEvent?: string): Promise<LineupPlayer[]> {
   const event = idEvent ? await eventDetail(idEvent) : null;
   if (!event) return [];
-  const [home, away] = await Promise.all([
-    squadPlayers(event.idHomeTeam),
-    squadPlayers(event.idAwayTeam),
-  ]);
-  return [
-    ...home.map((p) => ({ ...p, strHome: "Yes" })),
-    ...away.map((p) => ({ ...p, strHome: "No" })),
-  ];
+  const live = await fifaLiveMatch(event.idEvent);
+  const published = mapFifaLiveLineup(live);
+  const homeStarters = published.filter((p) => p.strHome === "Yes" && p.strSubstitute === "No").length;
+  const awayStarters = published.filter((p) => p.strHome === "No" && p.strSubstitute === "No").length;
+  return homeStarters === 11 && awayStarters === 11 ? published : [];
 }
 
 export async function eventStats(idEvent?: string): Promise<EventStat[]> {
@@ -402,6 +504,15 @@ export async function findPlayer(name: string): Promise<Player | null> {
   const result = player && squad ? mapFifaPlayer(player, text(squad.TeamName)) : null;
   playerCache.set(name, result);
   return result;
+}
+
+export async function findPlayerById(idPlayer: string): Promise<Player | null> {
+  const squads = await fifaSquads().catch(() => []);
+  for (const squad of squads) {
+    const player = squad.Players.find((p) => p.IdPlayer === idPlayer);
+    if (player) return mapFifaPlayer(player, text(squad.TeamName));
+  }
+  return null;
 }
 
 function normalizeName(name: string): string {

@@ -76,6 +76,8 @@ export interface LineupPlayer {
   strSubstitute: string | null; // "Yes" | "No"
   strHome: string | null; // "Yes" | "No"
   intSquadNumber: string | null;
+  idPlayer?: string | null;
+  strThumb?: string | null;
 }
 
 export interface EventStat {

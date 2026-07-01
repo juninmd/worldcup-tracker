@@ -1,7 +1,7 @@
 import type { WcEvent, LineupPlayer, EventStat } from "./types.ts";
 import { eventStats, lineup } from "./sportsdb.ts";
 import { flag } from "./format.ts";
-import { sendMessage } from "./telegram.ts";
+import { sendMediaGroup, sendMessage } from "./telegram.ts";
 
 const STAT_PT: Record<string, string> = {
   "Shots on Goal": "Finalizações no gol",
@@ -46,15 +46,22 @@ function side(players: LineupPlayer[], home: boolean) {
   return out;
 }
 
+function startersWithPhotos(players: LineupPlayer[], home: boolean): string[] {
+  return players
+    .filter((p) => ((p.strHome ?? "").toLowerCase() === "yes") === home)
+    .filter((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes")
+    .map((p) => p.strThumb)
+    .filter((x): x is string => !!x);
+}
+
 export function fmtLineup(e: WcEvent, players: LineupPlayer[]): string {
   if (!players.length) return "";
   const home = side(players, true), away = side(players, false);
   const hasStarters = players.some((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes");
-  const title = hasStarters ? "ESCALAÇÕES" : "ELENCOS OFICIAIS FIFA";
-  const lines = [`📋 *${title}* — ${e.strHomeTeam} x ${e.strAwayTeam}`, ``];
+  if (!hasStarters) return "";
+  const lines = [`📋 *ESCALAÇÕES OFICIAIS FIFA* — ${e.strHomeTeam} x ${e.strAwayTeam}`, ``];
   if (home.length) lines.push(`${flag(e.strHomeTeam)} *${e.strHomeTeam}*`, ...home, ``);
   if (away.length) lines.push(`${flag(e.strAwayTeam)} *${e.strAwayTeam}*`, ...away);
-  if (!hasStarters) lines.push(``, `_FIFA ainda não publicou XI inicial para este jogo; exibindo elenco oficial._`);
   return lines.join("\n");
 }
 
@@ -77,6 +84,13 @@ export async function postDetails(e: WcEvent): Promise<void> {
   const [ls, st] = await Promise.all([lineup(e.idEvent), eventStats(e.idEvent)]);
   const lineupMsg = fmtLineup(e, ls);
   const statsMsg = fmtStats(e, st);
-  if (lineupMsg) await sendMessage(lineupMsg);
+  if (lineupMsg) {
+    await sendMessage(lineupMsg);
+    for (const [team, photos] of [[e.strHomeTeam, startersWithPhotos(ls, true)], [e.strAwayTeam, startersWithPhotos(ls, false)]] as const) {
+      for (let i = 0; i < photos.length; i += 10) {
+        await sendMediaGroup(photos.slice(i, i + 10), `📸 Titulares ${team}`);
+      }
+    }
+  }
   if (statsMsg) await sendMessage(statsMsg);
 }

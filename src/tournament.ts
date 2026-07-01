@@ -20,6 +20,7 @@ export interface ProjectedMatch {
   away: string;
   prediction: Prediction;
   winner: string;
+  real?: boolean; // true when score + winner come from a finished real match, not the model
 }
 
 export interface TournamentProjection {
@@ -33,6 +34,12 @@ export interface TournamentProjection {
 
 const num = (v: string | null | undefined) => Number(v ?? 0) || 0;
 const matchNo = (e: WcEvent) => num(e.intRound);
+
+// A knockout fixture in the real feed (R32 → final). Group-stage events never match.
+const KNOCKOUT_RE = /final|round of|quarter|semi|oitavas|quartas|16|32/i;
+export function isKnockoutFixture(e: WcEvent): boolean {
+  return KNOCKOUT_RE.test(`${e.strStage ?? ""} ${e.strEvent} ${e.strStatus ?? ""}`);
+}
 
 // Official 2026 group draw. Source: FIFA/Al Jazeera schedule pages, June 2026.
 export const WORLD_CUP_GROUPS: Record<string, string[]> = {
@@ -236,7 +243,7 @@ function buildFifaBracket(
     const pred = isFinished(e) && hasRealScore
       ? { ...predicted, homeGoals: hs, awayGoals: as }
       : predicted;
-    const projected: ProjectedMatch = { round, home, away, prediction: pred, winner: winner(home, away, pred, table) };
+    const projected: ProjectedMatch = { round, home, away, prediction: pred, winner: winner(home, away, pred, table), real: isFinished(e) && hasRealScore };
     (byRound.get(round) ?? byRound.set(round, []).get(round)!).push(projected);
     winners.set(String(matchNo(e)), projected.winner);
   }
@@ -251,12 +258,38 @@ function buildOfficialBracket(
   thirds: ProjectedTeam[],
   table: Record<string, number>,
   history: WcEvent[],
+  knockout: WcEvent[] = [],
 ): ProjectedMatch[][] {
   const getTeam = (g: string, pos: number): string =>
     groups.get(g)?.[pos]?.team ?? `?${g}${pos + 1}`;
 
+  // Real finished knockout match between two teams (order-insensitive), if any.
+  // This is what keeps the projected bracket honest: once a real R32/R16/… result
+  // exists, its actual score + winner override the model and propagate forward,
+  // because subsequent rounds pair the (now real) winners of the prior round.
+  const realResult = (h: string, a: string): WcEvent | null => {
+    const ch = canonicalTeam(h), ca = canonicalTeam(a);
+    return knockout.find((e) => {
+      if (!isFinished(e)) return false;
+      const eh = canonicalTeam(e.strHomeTeam), ea = canonicalTeam(e.strAwayTeam);
+      return (eh === ch && ea === ca) || (eh === ca && ea === ch);
+    }) ?? null;
+  };
+
   const makeMatch = (h: string, a: string, round: string): ProjectedMatch => {
     const pred = predictMatch(table, h, a, history, true); // neutral venue
+    const real = realResult(h, a);
+    if (real) {
+      // Orient the real score to our (h, a) ordering and override the projection.
+      const realHome = canonicalTeam(real.strHomeTeam) === canonicalTeam(h);
+      const hs = num(realHome ? real.intHomeScore : real.intAwayScore);
+      const as = num(realHome ? real.intAwayScore : real.intHomeScore);
+      const realPred: Prediction = { ...pred, homeGoals: hs, awayGoals: as };
+      // Decisive score → real winner; tie (decided on penalties, no shootout field
+      // in the free feed) → fall back to the model's edge so a survivor still propagates.
+      const win = hs > as ? h : as > hs ? a : winner(h, a, pred, table);
+      return { round, home: h, away: a, prediction: realPred, winner: win, real: true };
+    }
     return { round, home: h, away: a, prediction: pred, winner: winner(h, a, pred, table) };
   };
 
@@ -416,9 +449,10 @@ export function fmtTournamentProjection(p: TournamentProjection): string {
         ? (isBrazilHome ? m.prediction.fifaRankAway : m.prediction.fifaRankHome)
         : undefined;
       const rankStr = rankOp ? ` (FIFA #${rankOp})` : "";
+      const src = m.real ? "resultado real" : `${pct(pBrazil)} Brasil`;
       lines.push(
-        `*${m.round}*: ${flag("Brazil")} Brazil *${bGoals}×${oGoals}* ${opponent} ${flag(opponent)}${rankStr}` +
-        `\n  ${probBar(pBrazil)} ${pct(pBrazil)} Brasil · ${brazilWins ? "✅ avança" : "❌ eliminado"}`,
+        `*${m.round}*${m.real ? " ✅" : ""}: ${flag("Brazil")} Brazil *${bGoals}×${oGoals}* ${opponent} ${flag(opponent)}${rankStr}` +
+        `\n  ${probBar(pBrazil)} ${src} · ${brazilWins ? "✅ avança" : "❌ eliminado"}`,
       );
     }
     lines.push(``);
@@ -436,13 +470,14 @@ export function fmtTournamentProjection(p: TournamentProjection): string {
   lines.push(``);
 
   // ── Knockout bracket ────────────────────────────────────────────────────
-  lines.push(`*Mata-mata — chaveamento projetado*`);
+  lines.push(`*Mata-mata — chaveamento*  _(✅ resultado real · 🔮 projeção)_`);
   for (const round of p.knockout) {
     const rName = round[0]?.round ?? "Rodada";
     lines.push(`\n*${rName}*`);
     const limit = rName === "Rodada de 32" ? 8 : round.length;
     for (const m of round.slice(0, limit)) {
-      lines.push(`  ${flag(m.home)} ${m.home} ${m.prediction.homeGoals}×${m.prediction.awayGoals} ${m.away} ${flag(m.away)} → *${m.winner}*`);
+      const tag = m.real ? "✅" : "🔮";
+      lines.push(`  ${tag} ${flag(m.home)} ${m.home} ${m.prediction.homeGoals}×${m.prediction.awayGoals} ${m.away} ${flag(m.away)} → *${m.winner}*`);
     }
     if (rName === "Rodada de 32" && round.length > limit) {
       lines.push(`  _+${round.length - limit} partidas (imagem completa via /bracket)_`);

@@ -1,5 +1,5 @@
 import type { Prediction, WcEvent, TimelineItem } from "./types.ts";
-import { eventsOnDate, findPlayer, isFinished, isLive, mergedSeasonEvents, seasonEvents, timeline } from "./sportsdb.ts";
+import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSeasonEvents, seasonEvents, timeline } from "./sportsdb.ts";
 import { trainRatings, outcomeOf } from "./elo.ts";
 import { predictMatch } from "./predict.ts";
 import { championForecast } from "./champion.ts";
@@ -148,7 +148,7 @@ export async function postPrematch(e: WcEvent): Promise<void> {
 }
 
 async function announceGoal(e: WcEvent, g: TimelineItem, score: string): Promise<void> {
-  const pl = g.strPlayer ? await findPlayer(g.strPlayer) : null;
+  const pl = g.idPlayer ? await findPlayerById(g.idPlayer) : g.strPlayer ? await findPlayer(g.strPlayer) : null;
   const caption = fmtGoalCaption(g, e, pl, score);
   const img = pl?.strCutout || pl?.strThumb;
   if (img) await sendPhoto(img, caption);
