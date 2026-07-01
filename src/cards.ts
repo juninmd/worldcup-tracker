@@ -16,8 +16,11 @@ export async function topCards(): Promise<CardTally[]> {
   const played = all.filter((e) => isFinished(e) || isLive(e));
   const tally = new Map<string, CardTally>();
 
-  for (const e of played) {
-    const cards = await cardEvents(e.idEvent);
+  const allCards = await Promise.all(
+    played.map((e) => cardEvents(e.idEvent))
+  );
+
+  for (const cards of allCards) {
     for (const c of cards) {
       if (!c.strPlayer) continue;
       const team = c.strTeam ?? "";
