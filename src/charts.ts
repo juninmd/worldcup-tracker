@@ -1,5 +1,6 @@
 import type { Scorer } from "./scorers.ts";
-import type { TableRow } from "./types.ts";
+import type { CardTally } from "./cards.ts";
+import type { TableRow, IntensityBucket } from "./types.ts";
 import type { TournamentProjection } from "./tournament.ts";
 import type { ChampionOdds } from "./champion.ts";
 import { byGroup } from "./standings.ts";
@@ -48,6 +49,58 @@ export function scorersChartUrl(list: Scorer[]): string | null {
     },
     640,
     Math.max(220, top.length * 34 + 80),
+  );
+}
+
+/** Horizontal bar of card counts (yellow + 2x red), most-carded players first. */
+export function cardsChartUrl(list: CardTally[]): string | null {
+  const top = list.slice(0, 12);
+  if (!top.length) return null;
+  return render(
+    {
+      type: "horizontalBar",
+      data: {
+        labels: top.map((c) => `${c.player} (${c.team})`),
+        datasets: [
+          { label: "Amarelos", data: top.map((c) => c.yellow), backgroundColor: AMBER },
+          { label: "Vermelhos", data: top.map((c) => c.red), backgroundColor: RED },
+        ],
+      },
+      options: {
+        title: { display: true, text: "Cartões — Copa do Mundo 2026", fontSize: 16 },
+        scales: {
+          xAxes: [{ stacked: true, ticks: { beginAtZero: true, precision: 0 } }],
+          yAxes: [{ stacked: true }],
+        },
+      },
+    },
+    640,
+    Math.max(220, top.length * 34 + 80),
+  );
+}
+
+/** Grouped bar of match "intensity" (shots + corners + fouls + cards + goals) per
+ *  15-minute period, home vs away — a temporal heat of the game, not a pitch heatmap
+ *  (the free FIFA feed carries no player-position data). */
+export function matchIntensityChartUrl(buckets: IntensityBucket[], home: string, away: string): string | null {
+  if (!buckets.length || !buckets.some((b) => b.home || b.away)) return null;
+  return render(
+    {
+      type: "bar",
+      data: {
+        labels: buckets.map((b) => `${b.label}'`),
+        datasets: [
+          { label: home, data: buckets.map((b) => b.home), backgroundColor: GREEN },
+          { label: away, data: buckets.map((b) => b.away), backgroundColor: BLUE },
+        ],
+      },
+      options: {
+        title: { display: true, text: `Mapa de calor — intensidade por período: ${home} x ${away}`, fontSize: 14 },
+        scales: { yAxes: [{ ticks: { beginAtZero: true, precision: 0 } }] },
+      },
+    },
+    660,
+    320,
   );
 }
 

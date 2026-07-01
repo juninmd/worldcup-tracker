@@ -86,6 +86,23 @@ export interface EventStat {
   intAway: string | null;
 }
 
+export interface CardEvent {
+  idTimeline?: string;
+  intTime: string;
+  strPlayer: string | null;
+  strTeam: string | null;
+  strHome: "yes" | "no" | null;
+  cardType: "yellow" | "red";
+}
+
+/** Weighted count of timestamped match events (shots, corners, fouls, cards,
+ *  goals) in a 15-minute period — a temporal "heat" of match intensity. */
+export interface IntensityBucket {
+  label: string;
+  home: number;
+  away: number;
+}
+
 export interface Prediction {
   homeGoals: number;
   awayGoals: number;

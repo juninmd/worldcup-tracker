@@ -4,6 +4,8 @@ import { postDailyMenu, ratingsNow, replayDate, trackForever } from "./engine.ts
 import { postTournamentProjection } from "./engine.ts";
 import { mergedSeasonEvents } from "./sportsdb.ts";
 import { fmtScorers, postTopScorers, topScorers } from "./scorers.ts";
+import { fmtCards, postTopCards, topCards } from "./cards.ts";
+import { buildMatchDigest, analyzeMatch, fmtAnalysis, postMatchAnalysis } from "./analysis.ts";
 import { postDetails } from "./details.ts";
 import { fmtCurrentStandings, fmtKnockout, postStandings, postKnockout } from "./standings.ts";
 import { fmtTournamentProjection, tournamentProjection } from "./tournament.ts";
@@ -62,6 +64,27 @@ switch (cmd) {
     console.log(`Details sent: ${e.strEvent}`);
     break;
   }
+  case "cards": {
+    if (rest[0] === "--send") { await postTopCards(); console.log("Cards sent."); break; }
+    console.log(fmtCards(await topCards()));
+    break;
+  }
+  case "analysis":
+  case "analise": {
+    const send = rest[rest.length - 1] === "--send";
+    const q = (send ? rest.slice(0, -1) : rest).join(" ").toLowerCase();
+    const e = (await mergedSeasonEvents()).find((x) => x.strEvent.toLowerCase().includes(q));
+    if (!e) { console.error(`no event matching "${q}"`); break; }
+    if (send) {
+      await postMatchAnalysis(e);
+      console.log(`Analysis sent: ${e.strEvent}`);
+      break;
+    }
+    const digest = await buildMatchDigest(e);
+    const analysis = await analyzeMatch(digest);
+    console.log(fmtAnalysis(digest, analysis));
+    break;
+  }
   case "standings":
   case "tabela": {
     if (rest[0] === "--send") { await postStandings(); console.log("Standings sent."); break; }
@@ -88,6 +111,6 @@ switch (cmd) {
     break;
   }
   default:
-    console.log("commands: menu [date] | track | homologate [date|forecast|full] [--send] | predict <H> <A> | champion | forecast [--send] | scorers [--send] | details <team> | standings [--send] | bracket [--send]");
+    console.log("commands: menu [date] | track | homologate [date|forecast|full] [--send] | predict <H> <A> | champion | forecast [--send] | scorers [--send] | cards [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send]");
     console.log("merged events:", (await mergedSeasonEvents()).length);
 }
