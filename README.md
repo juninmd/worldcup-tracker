@@ -50,6 +50,7 @@ bun run src/cli.ts track                  # loop ao vivo (polling minuto-a-minut
 bun run src/cli.ts homologate 2026-06-13  # replay completo de uma data (homologação)
 bun run src/cli.ts homologate forecast    # valida grupos, mata-mata, PNG da chama e invariantes
 bun run src/cli.ts homologate full        # gate FIFA/prod: jogos, times, atletas, gols, stats, live, escalação/fotos
+bun run src/cli.ts homologate telegram-dry-run # valida payloads Telegram sem enviar
 bun run src/cli.ts predict Brazil Morocco # previsão de um confronto (stdout)
 bun run src/cli.ts champion               # ranking de favoritos ao título (stdout)
 bun run src/cli.ts forecast [--send]      # simulação grupos + mata-mata + campeão

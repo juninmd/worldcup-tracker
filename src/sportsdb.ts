@@ -423,6 +423,12 @@ export function mapFifaPlayer(player: FifaPlayer, teamName: string): Player {
   };
 }
 
+/** Every registered player across all 48 squads, mapped to the public Player shape. */
+export async function allSquadPlayers(): Promise<Player[]> {
+  const squads = await fifaSquads();
+  return squads.flatMap((squad) => squad.Players.map((p) => mapFifaPlayer(p, text(squad.TeamName))));
+}
+
 async function fifaSquads(): Promise<FifaSquad[]> {
   return cached("fifa-squads", async () => {
     const path = `/teams/squads/all/${FIFA_COMPETITION_ID}/${FIFA_SEASON_ID}`;

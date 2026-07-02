@@ -8,6 +8,10 @@ import { sendMediaGroup, sendMessage, sendPhoto, sendPhotoStrict } from "./teleg
 import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
+import { postTopCards } from "./cards.ts";
+import { postVenues } from "./venues.ts";
+import { postGoalTimes } from "./goaltimes.ts";
+import { postStreaks } from "./streaks.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
 import { buildStarterHistory, lineupPenalty, missingKeyPlayers } from "./injuries.ts";
 import { postStandings } from "./standings.ts";
@@ -68,6 +72,10 @@ export async function postDailyMenu(date: string): Promise<void> {
   await postStandings();
   await postAnalysisCharts(champ, all, today, preds);
   await postTournamentProjection(projection);
+  await postTopCards();
+  await postVenues();
+  await postGoalTimes();
+  await postStreaks();
 }
 
 /** Last-N results per team (most recent first), from finished matches. */

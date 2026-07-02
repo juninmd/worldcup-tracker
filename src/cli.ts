@@ -6,10 +6,19 @@ import { mergedSeasonEvents } from "./sportsdb.ts";
 import { fmtScorers, postTopScorers, topScorers } from "./scorers.ts";
 import { fmtCards, postTopCards, topCards } from "./cards.ts";
 import { buildMatchDigest, analyzeMatch, fmtAnalysis, postMatchAnalysis } from "./analysis.ts";
+import { fmtVenues, postVenues, venueTable } from "./venues.ts";
+import { findTeamId, fmtSquad, postSquad } from "./squad.ts";
+import { squadPlayers } from "./sportsdb.ts";
+import { fmtTrivia, postTrivia, trivia } from "./trivia.ts";
+import { fmtGoalTimes, goalTimeDistribution, postGoalTimes } from "./goaltimes.ts";
+import { fmtLive, liveMatches, postLive } from "./live.ts";
+import { fmtHighlights, highlightMatches, postHighlights } from "./highlights.ts";
+import { fmtHeadToHead, headToHead, postHeadToHead } from "./h2h.ts";
+import { fmtStreaks, postStreaks, streaks } from "./streaks.ts";
 import { postDetails } from "./details.ts";
 import { fmtCurrentStandings, fmtKnockout, postStandings, postKnockout } from "./standings.ts";
 import { fmtTournamentProjection, tournamentProjection } from "./tournament.ts";
-import { homologateForecast, homologateFull } from "./homologation.ts";
+import { homologateForecast, homologateFull, homologateTelegramDryRun } from "./homologation.ts";
 
 function todayBRT(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -40,6 +49,13 @@ switch (cmd) {
       if (result.problems.length) process.exitCode = 1;
       break;
     }
+    if (rest[0] === "telegram" || rest[0] === "telegram-dry-run") {
+      const result = await homologateTelegramDryRun();
+      const out = rest.includes("--verbose") ? result : { ...result, mediaChecks: undefined };
+      console.log(JSON.stringify(out, null, 2));
+      if (result.problems.length) process.exitCode = 1;
+      break;
+    }
     await replayDate(rest[0] ?? "2026-06-13");
     console.log("Replay done.");
     break;
@@ -54,6 +70,61 @@ switch (cmd) {
   case "scorers": {
     if (rest[0] === "--send") { await postTopScorers(); console.log("Scorers sent."); break; }
     console.log(fmtScorers(await topScorers()));
+    break;
+  }
+  case "venues":
+  case "estadios": {
+    if (rest[0] === "--send") { await postVenues(); console.log("Venues sent."); break; }
+    console.log(fmtVenues(await venueTable()));
+    break;
+  }
+  case "squad":
+  case "elenco": {
+    const q = rest.filter((r) => r !== "--send").join(" ");
+    if (!q) { console.error("usage: squad <team> [--send]"); break; }
+    if (rest.includes("--send")) { await postSquad(q); console.log("Squad sent."); break; }
+    const team = await findTeamId(q);
+    if (!team) { console.error(`no team matching "${q}"`); break; }
+    console.log(fmtSquad(team.name, await squadPlayers(team.id)));
+    break;
+  }
+  case "trivia":
+  case "curiosidades": {
+    if (rest[0] === "--send") { await postTrivia(); console.log("Trivia sent."); break; }
+    console.log(fmtTrivia(await trivia()));
+    break;
+  }
+  case "goaltimes":
+  case "minutos": {
+    if (rest[0] === "--send") { await postGoalTimes(); console.log("Goal times sent."); break; }
+    console.log(fmtGoalTimes(await goalTimeDistribution()));
+    break;
+  }
+  case "live":
+  case "aovivo": {
+    if (rest[0] === "--send") { await postLive(); console.log("Live sent."); break; }
+    console.log(fmtLive(await liveMatches()));
+    break;
+  }
+  case "highlights":
+  case "melhores": {
+    if (rest[0] === "--send") { await postHighlights(); console.log("Highlights sent."); break; }
+    console.log(fmtHighlights(await highlightMatches()));
+    break;
+  }
+  case "h2h":
+  case "confronto": {
+    const send = rest.includes("--send");
+    const [a, b] = rest.filter((r) => r !== "--send");
+    if (!a || !b) { console.error("usage: h2h <TeamA> <TeamB> [--send]"); break; }
+    if (send) { await postHeadToHead(a, b); console.log("H2H sent."); break; }
+    console.log(fmtHeadToHead(await headToHead(a, b), a, b));
+    break;
+  }
+  case "streaks":
+  case "sequencias": {
+    if (rest[0] === "--send") { await postStreaks(); console.log("Streaks sent."); break; }
+    console.log(fmtStreaks(await streaks()));
     break;
   }
   case "details": {
@@ -111,6 +182,6 @@ switch (cmd) {
     break;
   }
   default:
-    console.log("commands: menu [date] | track | homologate [date|forecast|full] [--send] | predict <H> <A> | champion | forecast [--send] | scorers [--send] | cards [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send]");
+    console.log("commands: menu [date] | track | homologate [date|forecast|full|telegram-dry-run] [--send] | predict <H> <A> | champion | forecast [--send] | scorers [--send] | cards [--send] | venues [--send] | squad <team> [--send] | trivia [--send] | goaltimes [--send] | live [--send] | highlights [--send] | h2h <A> <B> [--send] | streaks [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send]");
     console.log("merged events:", (await mergedSeasonEvents()).length);
 }

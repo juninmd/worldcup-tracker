@@ -67,6 +67,12 @@ export interface TelegramDryRunResult {
     alerts: { player: string | null; score: string; photoOk: boolean; captionHasScore: boolean }[];
   };
   mediaChecks: { kind: "lineup" | "goal"; status: number; contentType: string | null }[];
+  mediaSummary: {
+    checked: number;
+    ok: number;
+    lineupOk: number;
+    goalOk: number;
+  };
   problems: string[];
 }
 
@@ -154,6 +160,12 @@ export async function homologateTelegramDryRun(): Promise<TelegramDryRunResult> 
       total: goals.length,
       withPlayerPhoto: goalPhotoOk,
       alerts,
+    },
+    mediaSummary: {
+      checked: mediaChecks.length,
+      ok: mediaChecks.length - badMedia.length,
+      lineupOk: mediaChecks.filter((c) => c.kind === "lineup" && c.status >= 200 && c.status < 400 && /image/i.test(c.contentType ?? "")).length,
+      goalOk: mediaChecks.filter((c) => c.kind === "goal" && c.status >= 200 && c.status < 400 && /image/i.test(c.contentType ?? "")).length,
     },
     mediaChecks,
     problems,

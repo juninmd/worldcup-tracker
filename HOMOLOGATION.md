@@ -6,6 +6,7 @@ Gate definitivo:
 bunx tsc --noEmit
 bun test
 bun run src/cli.ts homologate full
+bun run src/cli.ts homologate telegram-dry-run
 ```
 
 Contrato validado pelo `homologate full`:
@@ -28,6 +29,7 @@ Contrato validado pelo `homologate full`:
   - `/live/football/{IdMatch}`
 - Artefatos de producao presentes: `Dockerfile` e `.github/workflows/deploy.yml`.
 - Forecast/chama: 12 grupos, 32 classificados, chave 16/8/4/2/1 e PNG valido.
+- Dry-run Telegram: monta payloads sem enviar, valida grupos de mídia da escalação, captions de gol com placar e URLs de foto.
 
 Ultima evidencia local:
 
@@ -58,6 +60,31 @@ Ultima evidencia local:
     "scorers": 157,
     "leader": "Kylian Mbappe",
     "leaderGoals": 6
+  },
+  "problems": []
+}
+```
+
+Evidencia dry-run Telegram:
+
+```json
+{
+  "match": "Mexico vs Ecuador",
+  "lineup": {
+    "players": 52,
+    "playersWithPhoto": 52,
+    "starters": 22,
+    "mediaGroups": 6
+  },
+  "goals": {
+    "total": 2,
+    "withPlayerPhoto": 2
+  },
+  "mediaSummary": {
+    "checked": 54,
+    "ok": 54,
+    "lineupOk": 52,
+    "goalOk": 2
   },
   "problems": []
 }
