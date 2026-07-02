@@ -15,6 +15,9 @@ import { fmtLive, liveMatches, postLive } from "./live.ts";
 import { fmtHighlights, highlightMatches, postHighlights } from "./highlights.ts";
 import { fmtHeadToHead, headToHead, postHeadToHead } from "./h2h.ts";
 import { fmtStreaks, postStreaks, streaks } from "./streaks.ts";
+import { confederationTable, fmtConfederations, postConfederations } from "./confederations.ts";
+import { postTournamentInfo, fmtTournamentInfo } from "./tourneyinfo.ts";
+import { tournamentInfo } from "./sportsdb.ts";
 import { postDetails } from "./details.ts";
 import { fmtCurrentStandings, fmtKnockout, postStandings, postKnockout } from "./standings.ts";
 import { fmtTournamentProjection, tournamentProjection } from "./tournament.ts";
@@ -127,6 +130,18 @@ switch (cmd) {
     console.log(fmtStreaks(await streaks()));
     break;
   }
+  case "confederations":
+  case "confederacoes": {
+    if (rest[0] === "--send") { await postConfederations(); console.log("Confederations sent."); break; }
+    console.log(fmtConfederations(await confederationTable()));
+    break;
+  }
+  case "info":
+  case "sobre": {
+    if (rest[0] === "--send") { await postTournamentInfo(); console.log("Tournament info sent."); break; }
+    console.log(fmtTournamentInfo(await tournamentInfo()));
+    break;
+  }
   case "details": {
     const q = (rest[0] ?? "").toLowerCase();
     const e = (await mergedSeasonEvents()).find((x) => x.strEvent.toLowerCase().includes(q));
@@ -182,6 +197,6 @@ switch (cmd) {
     break;
   }
   default:
-    console.log("commands: menu [date] | track | homologate [date|forecast|full|telegram-dry-run] [--send] | predict <H> <A> | champion | forecast [--send] | scorers [--send] | cards [--send] | venues [--send] | squad <team> [--send] | trivia [--send] | goaltimes [--send] | live [--send] | highlights [--send] | h2h <A> <B> [--send] | streaks [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send]");
+    console.log("commands: menu [date] | track | homologate [date|forecast|full|telegram-dry-run] [--send] | predict <H> <A> | champion | forecast [--send] | scorers [--send] | cards [--send] | venues [--send] | squad <team> [--send] | trivia [--send] | goaltimes [--send] | live [--send] | highlights [--send] | h2h <A> <B> [--send] | streaks [--send] | confederations [--send] | info [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send]");
     console.log("merged events:", (await mergedSeasonEvents()).length);
 }

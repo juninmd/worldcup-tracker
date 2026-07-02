@@ -8,9 +8,11 @@ interface State {
   postedGoals: string[]; // `${idEvent}:${side}:${ordinal}`
   prematchPosted: string[]; // idEvent
   fulltimePosted: string[]; // idEvent
+  postedSubs: string[]; // `${idEvent}:${minute}:${playerIn}`
+  postedVar: string[]; // `${idEvent}:${minute}`
 }
 
-const empty: State = { postedGoals: [], prematchPosted: [], fulltimePosted: [] };
+const empty: State = { postedGoals: [], prematchPosted: [], fulltimePosted: [], postedSubs: [], postedVar: [] };
 
 export async function loadState(): Promise<State> {
   if (!existsSync(FILE)) return { ...empty };

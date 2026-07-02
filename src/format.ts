@@ -158,6 +158,12 @@ export function fmtGoalCaption(g: TimelineItem, e: WcEvent, pl: Player | null, s
     if (meta.length) lines.push(meta.join("  ·  "));
     if (pl.strTeam) lines.push(`🏟 Clube: ${pl.strTeam}`);
     if (pl.strNationality) lines.push(`🌍 ${pl.strNationality}`);
+    if (pl.intInternationalCaps || pl.intCareerGoals) {
+      const career: string[] = [];
+      if (pl.intInternationalCaps) career.push(`🎽 ${pl.intInternationalCaps} jogos pela seleção`);
+      if (pl.intCareerGoals) career.push(`⚽️ ${pl.intCareerGoals} gols na carreira`);
+      lines.push(career.join("  ·  "));
+    }
     if (pl.strDescriptionEN) lines.push(``, `📝 ${pl.strDescriptionEN.slice(0, 240)}…`);
   }
   return lines.join("\n");

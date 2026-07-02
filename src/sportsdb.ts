@@ -11,6 +11,9 @@ function ttlFor(path: string): number {
   if (path.startsWith("fifa:/calendar/matches")) return 20_000;
   if (path.startsWith("fifa:/timelines/")) return 15_000;
   if (path.startsWith("fifa:/teams/squads")) return 6 * 3_600_000;
+  if (path.startsWith("fifa:/teams/")) return 24 * 3_600_000; // team profile (confederation, city…) never changes mid-tournament
+  if (path.startsWith("fifa:/seasons/")) return 24 * 3_600_000;
+  if (path.startsWith("fifa:/players/")) return 3_600_000; // caps/goals only change after a player's next cap
   return 20_000;
 }
 
@@ -275,7 +278,14 @@ function playerFromDescription(description: string): string | null {
   return raw.replace(/\b([A-Z]{2,})\b/g, (m) => m[0] + m.slice(1).toLowerCase());
 }
 
-export function mapFifaTimelineEvent(item: FifaTimelineEvent, e: WcEvent): TimelineItem | null {
+function assistFromDescription(description: string): string | null {
+  const match = description.match(/Assisted by\s+(.+?)\.?$/i);
+  if (!match) return null;
+  const raw = match[1]?.trim();
+  return raw ? raw.replace(/\b([A-Z]{2,})\b/g, (m) => m[0] + m.slice(1).toLowerCase()) : null;
+}
+
+export function mapFifaTimelineEvent(item: FifaTimelineEvent, e: WcEvent, allItems?: FifaTimelineEvent[]): TimelineItem | null {
   const kind = text(item.TypeLocalized);
   if (![0, 34, 41].includes(item.Type ?? -1) && !/^(own goal|penalty goal|goal!?)$/i.test(kind)) return null;
   const description = text(item.EventDescription);
@@ -283,6 +293,11 @@ export function mapFifaTimelineEvent(item: FifaTimelineEvent, e: WcEvent): Timel
   const team = /own goal/i.test(kind)
     ? eventTeam === e.strHomeTeam ? e.strAwayTeam : eventTeam === e.strAwayTeam ? e.strHomeTeam : null
     : eventTeam;
+  // The official timeline emits the assist as its own event (Type 1) at the
+  // same minute/team as the goal it set up.
+  const assistEvent = allItems?.find((a) =>
+    (a.Type ?? -1) === 1 && a.IdTeam === item.IdTeam && a.MatchMinute === item.MatchMinute,
+  );
   return {
     idTimeline: item.EventId,
     intTime: item.MatchMinute?.replace("'", "") ?? "",
@@ -292,7 +307,7 @@ export function mapFifaTimelineEvent(item: FifaTimelineEvent, e: WcEvent): Timel
     strPlayer: team ? playerFromDescription(description) : null,
     strTeam: team,
     idPlayer: item.IdPlayer ?? null,
-    strAssist: null,
+    strAssist: assistEvent ? assistFromDescription(text(assistEvent.EventDescription)) : null,
     strComment: description || null,
   };
 }
@@ -356,6 +371,56 @@ async function fifaTimeline(idEvent: string): Promise<FifaTimelineEvent[]> {
     `${FIFA_BASE}/timelines/${idEvent}`,
   );
   return d.Event ?? [];
+}
+
+export interface SubstitutionItem {
+  minute: string;
+  team: string | null;
+  playerIn: string | null;
+  playerOut: string | null;
+}
+
+/** Substitutions for a single match, from the official FIFA timeline (Type 5). */
+export async function substitutionEvents(idEvent: string): Promise<SubstitutionItem[]> {
+  const event = await eventDetail(idEvent);
+  if (!event) return [];
+  const items = await fifaTimeline(idEvent);
+  const out: SubstitutionItem[] = [];
+  for (const item of items) {
+    if ((item.Type ?? -1) !== 5) continue;
+    const description = text(item.EventDescription);
+    const match = description.match(/^(.+?)\s+\(in\)\s+comes off the bench to replace\s+(.+?)\s+\(out\)/i);
+    if (!match) continue;
+    const cap = (s: string) => s.replace(/\b([A-Z]{2,})\b/g, (m) => m[0] + m.slice(1).toLowerCase());
+    const team = item.IdTeam === event.idHomeTeam ? event.strHomeTeam : item.IdTeam === event.idAwayTeam ? event.strAwayTeam : null;
+    out.push({
+      minute: item.MatchMinute?.replace("'", "") ?? "",
+      team,
+      playerIn: cap(match[1]!.trim()),
+      playerOut: cap(match[2]!.trim()),
+    });
+  }
+  return out;
+}
+
+export interface VarIncident {
+  minute: string;
+  team: string | null;
+  comment: string | null;
+}
+
+/** VAR review incidents for a single match, from the official FIFA timeline (Type 71). */
+export async function varIncidents(idEvent: string): Promise<VarIncident[]> {
+  const event = await eventDetail(idEvent);
+  if (!event) return [];
+  const items = await fifaTimeline(idEvent);
+  return items
+    .filter((item) => (item.Type ?? -1) === 71)
+    .map((item) => ({
+      minute: item.MatchMinute?.replace("'", "") ?? "",
+      team: item.IdTeam === event.idHomeTeam ? event.strHomeTeam : item.IdTeam === event.idAwayTeam ? event.strAwayTeam : null,
+      comment: text(item.EventDescription) || null,
+    }));
 }
 
 export async function fifaEndpointHealth(): Promise<FifaEndpointHealth[]> {
@@ -427,6 +492,71 @@ export function mapFifaPlayer(player: FifaPlayer, teamName: string): Player {
 export async function allSquadPlayers(): Promise<Player[]> {
   const squads = await fifaSquads();
   return squads.flatMap((squad) => squad.Players.map((p) => mapFifaPlayer(p, text(squad.TeamName))));
+}
+
+type FifaTeamProfile = {
+  IdTeam: string;
+  IdConfederation: string | null;
+  City: string | null;
+  FoundationYear: number | null;
+};
+
+const CONFEDERATION_NAMES: Record<string, string> = {
+  UEFA: "UEFA (Europa)",
+  CONMEBOL: "CONMEBOL (América do Sul)",
+  CONCACAF: "CONCACAF (América do Norte/Central)",
+  CAF: "CAF (África)",
+  AFC: "AFC (Ásia)",
+  OFC: "OFC (Oceania)",
+};
+
+async function fifaTeamProfile(idTeam: string): Promise<FifaTeamProfile | null> {
+  return getJson<FifaTeamProfile>(`fifa:/teams/${idTeam}`, `${FIFA_BASE}/teams/${idTeam}`).catch(() => null);
+}
+
+export interface TeamConfederation {
+  idTeam: string;
+  confederation: string | null;
+  confederationName: string;
+}
+
+/** Confederation (UEFA, CONMEBOL, AFC…) for a team, from its official FIFA profile. */
+export async function teamConfederation(idTeam: string): Promise<TeamConfederation> {
+  const profile = await fifaTeamProfile(idTeam);
+  const confederation = profile?.IdConfederation ?? null;
+  return { idTeam, confederation, confederationName: confederation ? CONFEDERATION_NAMES[confederation] ?? confederation : "Desconhecida" };
+}
+
+export interface TournamentInfo {
+  name: string;
+  startDate: string | null;
+  endDate: string | null;
+  mascotUrl: string | null;
+  matchBallUrl: string | null;
+  posterUrl: string | null;
+}
+
+type FifaSeasonInfo = {
+  Name?: Localized[];
+  StartDate?: string | null;
+  EndDate?: string | null;
+  PictureUrl?: string | null;
+  MascotPictureUrl?: string | null;
+  MatchBallPictureUrl?: string | null;
+};
+
+/** Official tournament metadata (dates, mascot, match ball artwork) from the FIFA season profile. */
+export async function tournamentInfo(): Promise<TournamentInfo> {
+  const path = `/seasons/${FIFA_SEASON_ID}`;
+  const d = await getJson<FifaSeasonInfo>(`fifa:${path}`, `${FIFA_BASE}${path}`).catch(() => ({} as FifaSeasonInfo));
+  return {
+    name: text(d.Name) || "FIFA World Cup 2026™",
+    startDate: d.StartDate ?? null,
+    endDate: d.EndDate ?? null,
+    mascotUrl: flagUrl(d.MascotPictureUrl),
+    matchBallUrl: flagUrl(d.MatchBallPictureUrl),
+    posterUrl: flagUrl(d.PictureUrl),
+  };
 }
 
 async function fifaSquads(): Promise<FifaSquad[]> {
@@ -576,7 +706,8 @@ export function isCompletePhotoLineup(players: LineupPlayer[]): boolean {
 export async function timeline(idEvent: string): Promise<TimelineItem[]> {
   const event = await eventDetail(idEvent);
   if (!event) return [];
-  return (await fifaTimeline(idEvent)).map((item) => mapFifaTimelineEvent(item, event)).filter((x): x is TimelineItem => !!x);
+  const items = await fifaTimeline(idEvent);
+  return items.map((item) => mapFifaTimelineEvent(item, event, items)).filter((x): x is TimelineItem => !!x);
 }
 
 export async function lineup(idEvent?: string): Promise<LineupPlayer[]> {
@@ -619,7 +750,31 @@ export async function eventStats(idEvent?: string): Promise<EventStat[]> {
       intHome: String(count(event.idHomeTeam, /Red card/i)),
       intAway: String(count(event.idAwayTeam, /Red card/i)),
     },
+    {
+      strStat: "Offsides",
+      intHome: String(count(event.idHomeTeam, /^Offside$/i)),
+      intAway: String(count(event.idAwayTeam, /^Offside$/i)),
+    },
+    {
+      // "Goal Prevention" is FIFA's timeline label for a keeper's save on a shot on target.
+      strStat: "Goalkeeper Saves",
+      intHome: String(count(event.idHomeTeam, /Goal Prevention/i)),
+      intAway: String(count(event.idAwayTeam, /Goal Prevention/i)),
+    },
   ];
+}
+
+type FifaPlayerCareer = {
+  InternationalCaps?: number | null;
+  Goals?: number | null;
+};
+
+/** Career totals (caps, international goals) from the player's own FIFA profile —
+ *  not present in the squad listing, which only has this tournament's roster info. */
+async function withCareerStats(player: Player, idPlayer: string): Promise<Player> {
+  const career = await getJson<FifaPlayerCareer>(`fifa:/players/${idPlayer}`, `${FIFA_BASE}/players/${idPlayer}`).catch(() => null);
+  if (!career) return player;
+  return { ...player, intInternationalCaps: career.InternationalCaps ?? null, intCareerGoals: career.Goals ?? null };
 }
 
 const playerCache = new Map<string, Player | null>();
@@ -630,18 +785,23 @@ export async function findPlayer(name: string): Promise<Player | null> {
   const squads = await fifaSquads().catch(() => []);
   const squad = squads.find((s) => s.Players.some((p) => normalizeName(text(p.PlayerName)) === norm || normalizeName(text(p.ShortName)) === norm));
   const player = squad?.Players.find((p) => normalizeName(text(p.PlayerName)) === norm || normalizeName(text(p.ShortName)) === norm);
-  const result = player && squad ? mapFifaPlayer(player, text(squad.TeamName)) : null;
+  const result = player && squad ? await withCareerStats(mapFifaPlayer(player, text(squad.TeamName)), player.IdPlayer) : null;
   playerCache.set(name, result);
   return result;
 }
 
+const playerByIdCache = new Map<string, Player | null>();
+
 export async function findPlayerById(idPlayer: string): Promise<Player | null> {
+  if (playerByIdCache.has(idPlayer)) return playerByIdCache.get(idPlayer)!;
   const squads = await fifaSquads().catch(() => []);
+  let result: Player | null = null;
   for (const squad of squads) {
     const player = squad.Players.find((p) => p.IdPlayer === idPlayer);
-    if (player) return mapFifaPlayer(player, text(squad.TeamName));
+    if (player) { result = await withCareerStats(mapFifaPlayer(player, text(squad.TeamName)), idPlayer); break; }
   }
-  return null;
+  playerByIdCache.set(idPlayer, result);
+  return result;
 }
 
 function normalizeName(name: string): string {

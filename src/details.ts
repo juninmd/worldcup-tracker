@@ -1,5 +1,5 @@
 import type { WcEvent, LineupPlayer, EventStat } from "./types.ts";
-import { eventStats, lineup } from "./sportsdb.ts";
+import { eventStats, lineup, type SubstitutionItem, type VarIncident } from "./sportsdb.ts";
 import { flag } from "./format.ts";
 import { sendMediaGroupStrict, sendMessage } from "./telegram.ts";
 
@@ -12,6 +12,7 @@ const STAT_PT: Record<string, string> = {
   "Shots outsidebox": "Finalizações de fora",
   "Ball Possession": "Posse de bola",
   "Fouls": "Faltas",
+  "Corners": "Escanteios",
   "Corner Kicks": "Escanteios",
   "Offsides": "Impedimentos",
   "Yellow Cards": "Cartões amarelos",
@@ -78,7 +79,21 @@ export function fmtStats(e: WcEvent, stats: EventStat[]): string {
   ].join("\n");
 }
 
-/** Send lineup + stats for an event (skips empty sections). */
+export function fmtSubstitutions(e: WcEvent, subs: SubstitutionItem[]): string {
+  if (!subs.length) return "";
+  const rows = subs.map((s) => `   ${s.minute}' ${flag(s.team ?? "")} ${s.playerIn} 🔼 ⬅️ 🔽 ${s.playerOut} (${s.team})`);
+  return [`🔄 *SUBSTITUIÇÕES* — ${e.strHomeTeam} x ${e.strAwayTeam}`, ``, ...rows].join("\n");
+}
+
+export function fmtVar(e: WcEvent, incidents: VarIncident[]): string {
+  if (!incidents.length) return "";
+  const rows = incidents.map((v) => `   ${v.minute}' ${flag(v.team ?? "")} ${v.comment ?? "Revisão do VAR"}`);
+  return [`🖥 *VAR* — ${e.strHomeTeam} x ${e.strAwayTeam}`, ``, ...rows].join("\n");
+}
+
+/** Send lineup + stats for an event (skips empty sections).
+ *  Substitutions and VAR reviews are announced live as they happen
+ *  (see engine.ts catchUpMatchEvents), so they aren't repeated here. */
 export async function postDetails(e: WcEvent): Promise<void> {
   const [ls, st] = await Promise.all([lineup(e.idEvent), eventStats(e.idEvent)]);
   const lineupMsg = fmtLineup(e, ls);

@@ -36,8 +36,9 @@ bun install
 cp .env.example .env   # preencha TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID
 ```
 
-> **Análise com IA:** o comando `analysis` chama a API da Claude e exige
-> `ANTHROPIC_API_KEY` no `.env`. Os demais comandos funcionam sem essa chave.
+> **Análise com IA:** o comando `analysis` chama o gateway LiteLLM do cluster
+> (`LITELLM_BASE_URL`/`LITELLM_API_KEY`/`LITELLM_MODEL` no `.env`), não a API da
+> Claude. Os demais comandos funcionam sem essas variáveis.
 
 > **Importante:** adicione o bot ao canal/grupo de destino e dê permissão de
 > postar (admin, em canais). Sem isso o Telegram responde `chat not found`.

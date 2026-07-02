@@ -1,9 +1,9 @@
 import type { Prediction, WcEvent, TimelineItem } from "./types.ts";
-import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSeasonEvents, seasonEvents, timeline } from "./sportsdb.ts";
+import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSeasonEvents, seasonEvents, timeline, substitutionEvents, varIncidents } from "./sportsdb.ts";
 import { trainRatings, outcomeOf } from "./elo.ts";
 import { predictMatch } from "./predict.ts";
 import { championForecast } from "./champion.ts";
-import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch } from "./format.ts";
+import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag } from "./format.ts";
 import { sendMediaGroup, sendMessage, sendPhoto, sendPhotoStrict } from "./telegram.ts";
 import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
@@ -12,6 +12,8 @@ import { postTopCards } from "./cards.ts";
 import { postVenues } from "./venues.ts";
 import { postGoalTimes } from "./goaltimes.ts";
 import { postStreaks } from "./streaks.ts";
+import { postConfederations } from "./confederations.ts";
+import { postTournamentInfo } from "./tourneyinfo.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
 import { buildStarterHistory, lineupPenalty, missingKeyPlayers } from "./injuries.ts";
 import { postStandings } from "./standings.ts";
@@ -69,13 +71,27 @@ export async function postDailyMenu(date: string): Promise<void> {
   }
   const projection = await tournamentProjection();
   await sendMessage(fmtDailyMenu(date, today, preds, recent, champ, await topScorers(), projection.brazilPath));
-  await postStandings();
-  await postAnalysisCharts(champ, all, today, preds);
-  await postTournamentProjection(projection);
-  await postTopCards();
-  await postVenues();
-  await postGoalTimes();
-  await postStreaks();
+
+  // Each of these is a self-contained "bonus" broadcast — a transient failure in
+  // one (a flaky fetch, a Telegram hiccup) must not swallow the rest of the menu.
+  const sections: [string, () => Promise<unknown>][] = [
+    ["standings", () => postStandings()],
+    ["analysis charts", () => postAnalysisCharts(champ, all, today, preds)],
+    ["tournament projection", () => postTournamentProjection(projection)],
+    ["cards", () => postTopCards()],
+    ["venues", () => postVenues()],
+    ["goal times", () => postGoalTimes()],
+    ["streaks", () => postStreaks()],
+    ["confederations", () => postConfederations()],
+    ["tournament info", () => postTournamentInfo()],
+  ];
+  for (const [label, run] of sections) {
+    try {
+      await run();
+    } catch (err) {
+      console.error(`daily menu section "${label}" failed:`, (err as Error).message);
+    }
+  }
 }
 
 /** Last-N results per team (most recent first), from finished matches. */
@@ -212,6 +228,24 @@ async function catchUpGoals(e: WcEvent, state: Awaited<ReturnType<typeof loadSta
   }
 }
 
+/** Announce substitutions and VAR reviews as they land in the FIFA timeline,
+ *  so the channel gets them in-game instead of only in the post-match digest. */
+async function catchUpMatchEvents(e: WcEvent, state: Awaited<ReturnType<typeof loadState>>): Promise<void> {
+  const [subs, vr] = await Promise.all([substitutionEvents(e.idEvent), varIncidents(e.idEvent)]);
+  for (const s of subs) {
+    const key = `${e.idEvent}:${s.minute}:${s.playerIn}`;
+    if (state.postedSubs.includes(key)) continue;
+    await sendMessage(`🔄 *Substituição* — ${flag(s.team ?? "")} ${s.team}\n${s.minute}' ${s.playerIn} 🔼 entra no lugar de 🔽 ${s.playerOut}`);
+    state.postedSubs.push(key);
+  }
+  for (const v of vr) {
+    const key = `${e.idEvent}:${v.minute}`;
+    if (state.postedVar.includes(key)) continue;
+    await sendMessage(`🖥 *VAR* — ${e.strHomeTeam} x ${e.strAwayTeam}\n${v.minute}' ${v.comment ?? "Revisão do VAR"}`);
+    state.postedVar.push(key);
+  }
+}
+
 /** One polling pass over live matches: prematch, goals, full-time. */
 export async function pollOnce(): Promise<number> {
   const state = await loadState();
@@ -226,6 +260,7 @@ export async function pollOnce(): Promise<number> {
         state.prematchPosted.push(e.idEvent);
       }
       await catchUpGoals(e, state);
+      await catchUpMatchEvents(e, state);
     }
     if (isFinished(e) && !state.fulltimePosted.includes(e.idEvent)) {
       if (state.prematchPosted.includes(e.idEvent)) {

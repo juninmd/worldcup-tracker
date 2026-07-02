@@ -68,6 +68,8 @@ export interface Player {
   strThumb: string | null;
   strCutout: string | null;
   strDescriptionEN: string | null;
+  intInternationalCaps?: number | null;
+  intCareerGoals?: number | null;
 }
 
 export interface LineupPlayer {

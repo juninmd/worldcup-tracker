@@ -1,5 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import OpenAI from "openai";
+import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import type { WcEvent, EventStat, TimelineItem, CardEvent, IntensityBucket } from "./types.ts";
 import { eventStats, timeline, cardEvents, matchIntensity, lineup } from "./sportsdb.ts";
@@ -7,7 +7,11 @@ import { flag } from "./format.ts";
 import { sendMessage, sendPhoto } from "./telegram.ts";
 import { matchIntensityChartUrl } from "./charts.ts";
 
-const MODEL = "claude-opus-4-8";
+// Runs against the cluster's own LiteLLM gateway (OpenAI-compatible) instead of
+// calling the Claude API directly — no external API bill, same free backends
+// (NVIDIA NIM/Gemini) the rest of the cluster's AI apps already share.
+const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL ?? "https://litellm.antonio-code.duckdns.org/v1";
+const LITELLM_MODEL = process.env.LITELLM_MODEL ?? "cloud/gpt-oss-120b";
 
 const PlayerNote = z.object({
   jogador: z.string(),
@@ -88,21 +92,25 @@ const SYSTEM_PROMPT = [
   "Seja direto e específico, evitando clichês genéricos.",
 ].join(" ");
 
-/** Calls Claude to produce a qualitative post-match analysis from official match data. */
+/** Calls the cluster's LiteLLM gateway to produce a qualitative post-match analysis
+ *  from official match data. */
 export async function analyzeMatch(digest: MatchDigest): Promise<MatchAnalysis> {
-  const client = new Anthropic();
-  const response = await client.messages.parse({
-    model: MODEL,
-    max_tokens: 2048,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: digestPrompt(digest) }],
-    output_config: {
-      format: zodOutputFormat(MatchAnalysisSchema),
-      effort: "high",
-    },
+  const client = new OpenAI({
+    baseURL: LITELLM_BASE_URL,
+    apiKey: process.env.LITELLM_API_KEY ?? "",
   });
-  if (!response.parsed_output) throw new Error("Claude did not return a parseable match analysis");
-  return response.parsed_output;
+  const completion = await client.chat.completions.parse({
+    model: LITELLM_MODEL,
+    max_tokens: 2048,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: digestPrompt(digest) },
+    ],
+    response_format: zodResponseFormat(MatchAnalysisSchema, "match_analysis"),
+  });
+  const parsed = completion.choices[0]?.message.parsed;
+  if (!parsed) throw new Error("LiteLLM did not return a parseable match analysis");
+  return parsed;
 }
 
 function fmtPlayerNote(n: { jogador: string; time: string; motivo: string }): string {
