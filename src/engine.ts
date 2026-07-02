@@ -3,7 +3,7 @@ import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSea
 import { trainRatings, outcomeOf } from "./elo.ts";
 import { predictMatch } from "./predict.ts";
 import { championForecast } from "./champion.ts";
-import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag } from "./format.ts";
+import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag, kickoff, parseUtc } from "./format.ts";
 import { sendMediaGroup, sendMessage, sendPhoto, sendPhotoStrict } from "./telegram.ts";
 import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
@@ -246,11 +246,39 @@ async function catchUpMatchEvents(e: WcEvent, state: Awaited<ReturnType<typeof l
   }
 }
 
+const UPCOMING_ALERT_WINDOW_MIN = 30;
+
+/** Heads-up ~30min before kickoff for any match not yet live, so people know
+ *  what's coming next — distinct from postPrematch, which only fires once the
+ *  match actually goes live (score/status become available on the feed). */
+async function checkUpcomingAlerts(all: WcEvent[], state: Awaited<ReturnType<typeof loadState>>): Promise<void> {
+  const now = Date.now();
+  for (const e of all) {
+    if (isLive(e) || isFinished(e)) continue;
+    if (state.postedUpcomingAlert.includes(e.idEvent)) continue;
+    const kick = parseUtc(e.strTimestamp);
+    if (!kick) continue;
+    const minutesUntil = (kick.getTime() - now) / 60_000;
+    if (minutesUntil <= 0 || minutesUntil > UPCOMING_ALERT_WINDOW_MIN) continue;
+
+    await sendMessage([
+      `⏰ *Próximo jogo em ${Math.max(1, Math.round(minutesUntil))} min!*`,
+      `${flag(e.strHomeTeam)} *${e.strHomeTeam} x ${e.strAwayTeam}* ${flag(e.strAwayTeam)}`,
+      `🕒 ${kickoff(e)}`,
+      [e.strStage, e.strGroup].filter(Boolean).join(" · "),
+      e.strVenue ? `🏟 ${e.strVenue}${e.strCity ? ` — ${e.strCity}` : ""}` : "",
+    ].filter(Boolean).join("\n"));
+    state.postedUpcomingAlert.push(e.idEvent);
+  }
+}
+
 /** One polling pass over live matches: prematch, goals, full-time. */
 export async function pollOnce(): Promise<number> {
   const state = await loadState();
   const all = await trackedEvents();
   let live = 0;
+
+  await checkUpcomingAlerts(all, state);
 
   for (const e of all) {
     if (isLive(e)) {

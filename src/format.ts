@@ -35,7 +35,7 @@ function oddsBar(pHome: number, pDraw: number, pAway: number): string {
 }
 
 /** Robust UTC parser: handles "DD/MM/YYYY HH:mm:ss" and ISO-ish strings. */
-function parseUtc(ts: string | null): Date | null {
+export function parseUtc(ts: string | null): Date | null {
   if (!ts) return null;
   const m = ts.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
   if (m) {
@@ -50,7 +50,7 @@ const BRT = (d: Date, withTime = true) =>
   d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo",
     day: "2-digit", month: "2-digit", ...(withTime ? { hour: "2-digit", minute: "2-digit" } : {}) });
 
-function kickoff(e: WcEvent): string {
+export function kickoff(e: WcEvent): string {
   const d = parseUtc(e.strTimestamp);
   return d ? `${BRT(d)} (BRT)` : e.dateEvent;
 }

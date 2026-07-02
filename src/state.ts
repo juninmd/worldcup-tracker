@@ -10,9 +10,12 @@ interface State {
   fulltimePosted: string[]; // idEvent
   postedSubs: string[]; // `${idEvent}:${minute}:${playerIn}`
   postedVar: string[]; // `${idEvent}:${minute}`
+  postedUpcomingAlert: string[]; // idEvent — "starts in ~30min" heads-up
 }
 
-const empty: State = { postedGoals: [], prematchPosted: [], fulltimePosted: [], postedSubs: [], postedVar: [] };
+const empty: State = {
+  postedGoals: [], prematchPosted: [], fulltimePosted: [], postedSubs: [], postedVar: [], postedUpcomingAlert: [],
+};
 
 export async function loadState(): Promise<State> {
   if (!existsSync(FILE)) return { ...empty };
