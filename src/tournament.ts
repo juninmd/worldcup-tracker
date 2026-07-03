@@ -3,6 +3,7 @@ import { canonicalTeam, rating, teamStrength } from "./elo.ts";
 import { trainRatings } from "./elo.ts";
 import { flag } from "./format.ts";
 import { predictMatch } from "./predict.ts";
+import { squadAbsencePenalties } from "./injuries.ts";
 import { isFinished, leagueTable, mergedSeasonEvents } from "./sportsdb.ts";
 
 export interface ProjectedTeam {
@@ -30,6 +31,22 @@ export interface TournamentProjection {
   knockout: ProjectedMatch[][];
   champion: string;
   brazilPath: ProjectedMatch[];
+}
+
+// Likely-absent-regulars penalty per team (set once per projection run); makes
+// every projected scoreline account for injured/suspended starters.
+let absencePens = new Map<string, number>();
+function predictWithAbsences(
+  table: Record<string, number>,
+  home: string,
+  away: string,
+  history: WcEvent[],
+  neutral = true,
+): Prediction {
+  return predictMatch(table, home, away, history, neutral, {
+    home: absencePens.get(canonicalTeam(home)) ?? 0,
+    away: absencePens.get(canonicalTeam(away)) ?? 0,
+  });
 }
 
 const num = (v: string | null | undefined) => Number(v ?? 0) || 0;
@@ -139,7 +156,7 @@ async function projectedGroups(events: WcEvent[], table: Record<string, number>)
     if (trustTable && home.played + away.played > 0 && isFinished(e)) continue;
     const p = isFinished(e)
       ? { homeGoals: num(e.intHomeScore), awayGoals: num(e.intAwayScore) }
-      : predictMatch(table, e.strHomeTeam, e.strAwayTeam, events);
+      : predictWithAbsences(table, e.strHomeTeam, e.strAwayTeam, events);
     applyScore(home, p.homeGoals, p.awayGoals);
     applyScore(away, p.awayGoals, p.homeGoals);
   }
@@ -236,7 +253,7 @@ function buildFifaBracket(
     const home = resolve("home", e);
     const away = resolve("away", e);
     const round = roundName(e);
-    const predicted = predictMatch(table, home, away, history, true);
+    const predicted = predictWithAbsences(table, home, away, history);
     const hs = Number(e.intHomeScore);
     const as = Number(e.intAwayScore);
     const hasRealScore = !Number.isNaN(hs) && !Number.isNaN(as);
@@ -277,7 +294,7 @@ function buildOfficialBracket(
   };
 
   const makeMatch = (h: string, a: string, round: string): ProjectedMatch => {
-    const pred = predictMatch(table, h, a, history, true); // neutral venue
+    const pred = predictWithAbsences(table, h, a, history); // neutral venue
     const real = realResult(h, a);
     if (real) {
       // Orient the real score to our (h, a) ordering and override the projection.
@@ -347,6 +364,7 @@ function brazilPathInKnockout(rounds: ProjectedMatch[][]): ProjectedMatch[] {
 export async function tournamentProjection(): Promise<TournamentProjection> {
   const all = await mergedSeasonEvents();
   const table = trainRatings(all.filter(isFinished));
+  absencePens = await squadAbsencePenalties(all).catch(() => new Map<string, number>());
   const groupEvents = all.filter((e) =>
     num(e.intRound) <= 1 &&
     groupName(e) !== "Projetado" &&
@@ -429,7 +447,7 @@ function matchLine(m: ProjectedMatch, perspective?: string): string {
 export function fmtTournamentProjection(p: TournamentProjection): string {
   const lines: string[] = [
     `🔥 *CHAVE PROJETADA — Copa 2026*`,
-    `_Modelo: ranking FIFA/Elo · resultados reais · qualidade do elenco · H2H_`,
+    `_Modelo: ranking FIFA/Elo · resultados reais · qualidade do elenco · H2H · desfalques_`,
     ``,
     `🏆 *Campeão previsto:* ${flag(p.champion)} *${p.champion}*`,
     ``,

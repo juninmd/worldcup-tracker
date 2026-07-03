@@ -15,7 +15,8 @@ import { postStreaks } from "./streaks.ts";
 import { postConfederations } from "./confederations.ts";
 import { postTournamentInfo } from "./tourneyinfo.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
-import { buildStarterHistory, lineupPenalty, missingKeyPlayers } from "./injuries.ts";
+import { buildStarterHistory, lineupPenalty, missingKeyPlayers, squadAbsencePenalties } from "./injuries.ts";
+import { canonicalTeam } from "./elo.ts";
 import { postStandings } from "./standings.ts";
 import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
 import { writeFile } from "node:fs/promises";
@@ -25,6 +26,7 @@ import {
   formChartUrl,
   matchOddsChartUrl,
   strengthChartUrl,
+  tournamentCircleChartUrl,
   tournamentFlameChartUrl,
   type FixtureOdds,
   type TeamForm,
@@ -53,7 +55,11 @@ export async function postDailyMenu(date: string): Promise<void> {
   for (const e of dayFeed) todayMap.set(e.idEvent, e);
   const today = [...todayMap.values()]
     .sort((a, b) => (a.strTimestamp ?? "").localeCompare(b.strTimestamp ?? ""));
-  const preds = new Map(today.map((e) => [e.idEvent, predictMatch(table, e.strHomeTeam, e.strAwayTeam, all)]));
+  const pens = await squadAbsencePenalties(all).catch(() => new Map<string, number>());
+  const preds = new Map(today.map((e) => [e.idEvent, predictMatch(table, e.strHomeTeam, e.strAwayTeam, all, true, {
+    home: pens.get(canonicalTeam(e.strHomeTeam)) ?? 0,
+    away: pens.get(canonicalTeam(e.strAwayTeam)) ?? 0,
+  })]));
   const recent = all.filter(isFinished)
     .sort((a, b) => (b.strTimestamp ?? "").localeCompare(a.strTimestamp ?? ""));
   const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];
@@ -142,6 +148,8 @@ async function postAnalysisCharts(
 
 export async function postTournamentProjection(pre?: Awaited<ReturnType<typeof tournamentProjection>>): Promise<void> {
   const projection = pre ?? await tournamentProjection();
+  const circle = tournamentCircleChartUrl(projection);
+  if (circle) await sendPhoto(circle, `⭕ Chaveamento em círculos — Copa 2026 · campeão previsto: ${projection.champion}`);
   const chart = tournamentFlameChartUrl(projection);
   if (chart) await sendPhoto(chart, `🔥 Chama da Copa 2026 — campeão previsto: ${projection.champion}`);
   await sendMessage(fmtTournamentProjection(projection));

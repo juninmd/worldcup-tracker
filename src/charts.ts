@@ -248,10 +248,42 @@ export function matchOddsChartUrl(fixtures: FixtureOdds[]): string | null {
   );
 }
 
-const graphviz = (dot: string): string =>
-  `https://quickchart.io/graphviz?format=png&graph=${encodeURIComponent(dot)}`;
+const graphviz = (dot: string, layout = "dot"): string =>
+  `https://quickchart.io/graphviz?format=png&layout=${layout}&graph=${encodeURIComponent(dot)}`;
 
 const esc = (s: string): string => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+/** Circular bracket: champion at the center, each knockout round as a
+ *  concentric ring (twopi layout) — final ring 1, semis ring 2, … R32 outermost. */
+export function tournamentCircleChartUrl(p: TournamentProjection): string | null {
+  if (!p.knockout.length) return null;
+  const rounds = p.knockout;
+  const last = rounds.length - 1;
+  const lines = [
+    "digraph G {",
+    'graph [layout=twopi, root=champ, ranksep=2.2, overlap=false, splines=true, bgcolor=white];',
+    'node [shape=ellipse, style=filled, fontname="Arial", fontsize=13, fillcolor="#eff6ff", color="#2563eb"];',
+    'edge [color="#93c5fd", arrowhead=none];',
+    `champ [label="CAMPEÃO\\n${esc(p.champion)}", shape=doublecircle, fillcolor="#fde68a", color="#f59e0b", fontsize=16];`,
+  ];
+  for (const [ri, round] of rounds.entries()) {
+    for (const [mi, m] of round.entries()) {
+      const fill = m.real ? "#dcfce7" : "#eff6ff";
+      const label = `${esc(m.home)} ${m.prediction.homeGoals}×${m.prediction.awayGoals} ${esc(m.away)}\\n${esc(m.winner)}`;
+      lines.push(`m${ri}_${mi} [label="${label}", fillcolor="${fill}"];`);
+    }
+  }
+  lines.push(`champ -> m${last}_0;`);
+  for (let ri = last; ri > 0; ri--) {
+    const prev = rounds[ri - 1] ?? [];
+    for (let mi = 0; mi < rounds[ri]!.length; mi++) {
+      if (prev[mi * 2]) lines.push(`m${ri}_${mi} -> m${ri - 1}_${mi * 2};`);
+      if (prev[mi * 2 + 1]) lines.push(`m${ri}_${mi} -> m${ri - 1}_${mi * 2 + 1};`);
+    }
+  }
+  lines.push("}");
+  return graphviz(lines.join("\n"), "twopi");
+}
 
 /** Daily tournament flame: bracket path + score predictions as shareable PNG. */
 export function tournamentFlameChartUrl(p: TournamentProjection): string | null {

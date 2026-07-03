@@ -1,4 +1,5 @@
 import type { LineupPlayer, WcEvent } from "./types.ts";
+import { canonicalTeam } from "./elo.ts";
 import { isFinished, lineup } from "./sportsdb.ts";
 
 // Position → match-impact weight; used to score absences of regular starters.
@@ -93,6 +94,43 @@ export function missingKeyPlayers(
     if (!found) missing.push({ name: player, weight });
   }
   return missing;
+}
+
+// Regulars missing from a team's most recent lineup are only *likely* out
+// (injury/suspension) for future matches — discount vs a confirmed absence.
+const LIKELY_OUT_FACTOR = 0.6;
+
+let _penCache: Map<string, number> | null = null;
+let _penCacheTime = 0;
+
+/** Projected absence penalty per team (canonical name), inferred from the last
+ *  finished match: regular starters who did not start it are treated as likely
+ *  unavailable. Feeds predictions where no confirmed lineup exists yet. */
+export async function squadAbsencePenalties(events: WcEvent[]): Promise<Map<string, number>> {
+  if (_penCache && Date.now() - _penCacheTime < CACHE_TTL) return _penCache;
+
+  const history = await buildStarterHistory(events);
+  const finishedDesc = events.filter(isFinished).sort((a, b) =>
+    (b.strTimestamp ?? b.dateEvent).localeCompare(a.strTimestamp ?? a.dateEvent));
+
+  const pens = new Map<string, number>();
+  const seen = new Set<string>();
+  for (const e of finishedDesc) {
+    const sides: [string, boolean][] = [[e.strHomeTeam, true], [e.strAwayTeam, false]];
+    if (sides.every(([t]) => seen.has(canonicalTeam(t)))) continue;
+    const xi = await lineup(e.idEvent).catch((): LineupPlayer[] => []);
+    for (const [team, isHome] of sides) {
+      const key = canonicalTeam(team);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const pen = lineupPenalty(xi, team, isHome, history) * LIKELY_OUT_FACTOR;
+      if (pen > 0) pens.set(key, pen);
+    }
+  }
+
+  _penCache = pens;
+  _penCacheTime = Date.now();
+  return pens;
 }
 
 /** Total quality penalty from absent regulars in the confirmed lineup. */

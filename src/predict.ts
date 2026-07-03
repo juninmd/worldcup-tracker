@@ -9,13 +9,29 @@ function poisson(lambda: number, k: number): number {
   return (lambda ** k * Math.exp(-lambda)) / f;
 }
 
-/** Expected goals for each side, derived from Elo win-expectancy. */
+/** Expected goals for each side, derived from Elo difference.
+ *  Log-linear split (softer curve than raw win-expectancy) avoids the old
+ *  linear mapping's tendency to overshoot goal counts in lopsided ties, and
+ *  mismatches inflate the total slightly (blowouts produce more goals). */
 function lambdas(eloHome: number, eloAway: number, neutral = false): [number, number] {
   const hfa = neutral ? 0 : hostAdvantage();
-  const we = expectancy(eloHome + hfa, eloAway);
-  const lh = Math.max(0.3, AVG_GOALS * 0.5 + (we - 0.5) * 2.4);
-  const la = Math.max(0.3, AVG_GOALS * 0.5 - (we - 0.5) * 2.4);
+  const diff = eloHome + hfa - eloAway;
+  const total = AVG_GOALS * (1 + Math.min(0.35, Math.abs(diff) / 1200));
+  const share = 1 / (1 + 10 ** (-diff / 480));
+  const lh = Math.max(0.25, total * share);
+  const la = Math.max(0.25, total * (1 - share));
   return [lh, la];
+}
+
+// Dixon-Coles low-score correlation: independent Poissons underrate 0-0/1-1
+// and overrate 1-0/0-1. Standard rho correction, renormalized afterwards.
+const RHO = -0.13;
+function tau(i: number, j: number, lh: number, la: number): number {
+  if (i === 0 && j === 0) return 1 - lh * la * RHO;
+  if (i === 0 && j === 1) return 1 + lh * RHO;
+  if (i === 1 && j === 0) return 1 + la * RHO;
+  if (i === 1 && j === 1) return 1 - RHO;
+  return 1;
 }
 
 /** Poisson scoreline + 1X2 probabilities for a fixture.
@@ -40,11 +56,12 @@ export function predictMatch(
   const strengthAway = teamStrength(table, away) - bias - penA;
   const [lh, la] = lambdas(strengthHome, strengthAway, neutral);
 
-  let pHome = 0, pDraw = 0, pAway = 0;
+  let pHome = 0, pDraw = 0, pAway = 0, total = 0;
   let best = -1, bh = 0, ba = 0;
   for (let i = 0; i <= 8; i++) {
     for (let j = 0; j <= 8; j++) {
-      const p = poisson(lh, i) * poisson(la, j);
+      const p = poisson(lh, i) * poisson(la, j) * tau(i, j, lh, la);
+      total += p;
       if (i > j) pHome += p;
       else if (i === j) pDraw += p;
       else pAway += p;
@@ -54,9 +71,9 @@ export function predictMatch(
   return {
     homeGoals: bh,
     awayGoals: ba,
-    pHome: round(pHome),
-    pDraw: round(pDraw),
-    pAway: round(pAway),
+    pHome: round(pHome / total),
+    pDraw: round(pDraw / total),
+    pAway: round(pAway / total),
     eloHome: Math.round(strengthHome - qh),
     eloAway: Math.round(strengthAway - qa),
     playerQualityHome: Math.round(qh),
