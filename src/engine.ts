@@ -21,10 +21,12 @@ import { postStandings } from "./standings.ts";
 import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
 import { writeFile } from "node:fs/promises";
 import { fmtTournamentProjection, tournamentProjection } from "./tournament.ts";
+import { fmtSimulation, simulateKnockout } from "./simulate.ts";
 import {
   championChartUrl,
   formChartUrl,
   matchOddsChartUrl,
+  simulationChartUrl,
   strengthChartUrl,
   tournamentCircleChartUrl,
   tournamentFlameChartUrl,
@@ -153,6 +155,14 @@ export async function postTournamentProjection(pre?: Awaited<ReturnType<typeof t
   const chart = tournamentFlameChartUrl(projection);
   if (chart) await sendPhoto(chart, `🔥 Chama da Copa 2026 — campeão previsto: ${projection.champion}`);
   await sendMessage(fmtTournamentProjection(projection));
+
+  const { all, table } = await ratingsNow();
+  const sim = simulateKnockout(projection, table, all);
+  if (sim) {
+    const simChart = simulationChartUrl(sim.title, sim.runs);
+    if (simChart) await sendPhoto(simChart, `🎲 Monte Carlo — chances reais de título pelo chaveamento`);
+    await sendMessage(fmtSimulation(sim));
+  }
 }
 
 /** Best available event artwork to use as a visual cover. */

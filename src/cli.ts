@@ -189,6 +189,15 @@ switch (cmd) {
     console.log(fmtTournamentProjection(await tournamentProjection()));
     break;
   }
+  case "simulate":
+  case "simular": {
+    const { tournamentProjection } = await import("./tournament.ts");
+    const { simulateKnockout, fmtSimulation } = await import("./simulate.ts");
+    const { all, table } = await ratingsNow();
+    const sim = simulateKnockout(await tournamentProjection(), table, all);
+    console.log(sim ? fmtSimulation(sim) : "no knockout bracket to simulate");
+    break;
+  }
   case "champion": {
     const { table, all } = await ratingsNow();
     const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];

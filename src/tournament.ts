@@ -495,7 +495,8 @@ export function fmtTournamentProjection(p: TournamentProjection): string {
     const limit = rName === "Rodada de 32" ? 8 : round.length;
     for (const m of round.slice(0, limit)) {
       const tag = m.real ? "✅" : "🔮";
-      lines.push(`  ${tag} ${flag(m.home)} ${m.home} ${m.prediction.homeGoals}×${m.prediction.awayGoals} ${m.away} ${flag(m.away)} → *${m.winner}*`);
+      const pens = !m.real && m.prediction.homeGoals === m.prediction.awayGoals ? " _(pên.)_" : "";
+      lines.push(`  ${tag} ${flag(m.home)} ${m.home} ${m.prediction.homeGoals}×${m.prediction.awayGoals} ${m.away} ${flag(m.away)} → *${m.winner}*${pens}`);
     }
     if (rName === "Rodada de 32" && round.length > limit) {
       lines.push(`  _+${round.length - limit} partidas (imagem completa via /bracket)_`);

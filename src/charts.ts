@@ -248,6 +248,32 @@ export function matchOddsChartUrl(fixtures: FixtureOdds[]): string | null {
   );
 }
 
+/** Horizontal bar of Monte Carlo title probabilities (bracket-aware). */
+export function simulationChartUrl(title: { team: string; prob: number }[], runs: number): string | null {
+  const top = title.slice(0, 12);
+  if (!top.length) return null;
+  return render(
+    {
+      type: "horizontalBar",
+      data: {
+        labels: top.map((t) => t.team),
+        datasets: [{
+          label: "Título (%)",
+          data: top.map((t) => Math.round(t.prob * 1000) / 10),
+          backgroundColor: top.map((t, i) => (t.team === "Brazil" ? AMBER : i === 0 ? GREEN : BLUE)),
+        }],
+      },
+      options: {
+        legend: { display: false },
+        title: { display: true, text: `Monte Carlo — título em ${runs.toLocaleString("pt-BR")} Copas simuladas (%)`, fontSize: 15 },
+        scales: { xAxes: [{ ticks: { beginAtZero: true } }] },
+      },
+    },
+    660,
+    Math.max(220, top.length * 32 + 80),
+  );
+}
+
 const graphviz = (dot: string, layout = "dot"): string =>
   `https://quickchart.io/graphviz?format=png&layout=${layout}&graph=${encodeURIComponent(dot)}`;
 
@@ -268,9 +294,13 @@ export function tournamentCircleChartUrl(p: TournamentProjection): string | null
   ];
   for (const [ri, round] of rounds.entries()) {
     for (const [mi, m] of round.entries()) {
-      const fill = m.real ? "#dcfce7" : "#eff6ff";
-      const label = `${esc(m.home)} ${m.prediction.homeGoals}×${m.prediction.awayGoals} ${esc(m.away)}\\n${esc(m.winner)}`;
-      lines.push(`m${ri}_${mi} [label="${label}", fillcolor="${fill}"];`);
+      const hasBrazil = m.home === "Brazil" || m.away === "Brazil";
+      // Brazil's matches pop in canarinho yellow/green; real results in soft green.
+      const fill = hasBrazil ? "#fde047" : m.real ? "#dcfce7" : "#eff6ff";
+      const border = hasBrazil ? ', color="#16a34a", penwidth=2' : "";
+      const pens = !m.real && m.prediction.homeGoals === m.prediction.awayGoals ? " (pên.)" : "";
+      const label = `${esc(m.home)} ${m.prediction.homeGoals}×${m.prediction.awayGoals} ${esc(m.away)}\\n${esc(m.winner)}${pens}`;
+      lines.push(`m${ri}_${mi} [label="${label}", fillcolor="${fill}"${border}];`);
     }
   }
   lines.push(`champ -> m${last}_0;`);
