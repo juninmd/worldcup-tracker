@@ -16,7 +16,7 @@ const client = () => new OpenAI({ baseURL: LITELLM_BASE_URL, apiKey: process.env
 // ── Bracket oracle: qualitative read of the projected bracket + Monte Carlo ──
 
 const BracketOracleSchema = z.object({
-  veredito: z.string().describe("Leitura da chave projetada em 2 a 4 frases, português do Brasil."),
+  veredito: z.string().describe("Leitura da chave projetada: obrigatoriamente de 2 a 4 frases completas em português do Brasil, citando lados da chave e confrontos concretos dos dados."),
   zebraProvavel: z.object({
     time: z.string(),
     motivo: z.string(),
@@ -35,6 +35,8 @@ const ORACLE_SYSTEM = [
   "Recebe a chave de mata-mata projetada por um modelo estatístico (Elo + Poisson) e as probabilidades de uma simulação de Monte Carlo.",
   "Avalie criticamente: o modelo só vê números — você conhece contexto tático, pressão, tradição em Copas.",
   "Seja específico e direto; nada de clichês. Não invente resultados que não estão nos dados.",
+  "Os dados não contêm nomes de jogadores — NUNCA cite jogadores por nome, fale de seleções, setores e confrontos.",
+  "O campo 'jogoDaCopa' deve ser um confronto do MATA-MATA listado, nunca da fase de grupos.",
 ].join(" ");
 
 function bracketPrompt(p: TournamentProjection, sim: SimResult): string {
