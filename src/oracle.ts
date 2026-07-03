@@ -63,7 +63,7 @@ function bracketPrompt(p: TournamentProjection, sim: SimResult): string {
 export async function bracketOracle(p: TournamentProjection, sim: SimResult): Promise<BracketOracle> {
   const completion = await client().chat.completions.parse({
     model: LITELLM_MODEL,
-    max_tokens: 1024,
+    max_tokens: 4096, // gpt-oss spends reasoning tokens from this budget
     messages: [
       { role: "system", content: ORACLE_SYSTEM },
       { role: "user", content: bracketPrompt(p, sim) },
@@ -147,7 +147,7 @@ export async function previewMatch(
 ): Promise<MatchPreview> {
   const completion = await client().chat.completions.parse({
     model: LITELLM_MODEL,
-    max_tokens: 768,
+    max_tokens: 3072, // gpt-oss spends reasoning tokens from this budget
     messages: [
       { role: "system", content: PREVIEW_SYSTEM },
       { role: "user", content: previewPrompt(e, pred, absences) },
