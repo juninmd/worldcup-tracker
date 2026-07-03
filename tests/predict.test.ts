@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { trainRatings, expectancy, outcomeOf } from "../src/elo.ts";
-import { predictMatch } from "../src/predict.ts";
+import { calibrateGoals, predictMatch, scoreMatrix } from "../src/predict.ts";
 import { championForecast } from "../src/champion.ts";
 import type { WcEvent } from "../src/types.ts";
 
@@ -58,6 +58,29 @@ test("championForecast: normalized, ranked desc", () => {
   expect(odds.reduce((s, o) => s + o.prob, 0)).toBeCloseTo(1, 5);
   expect(odds[0]!.prob).toBeGreaterThanOrEqual(odds[1]!.prob);
   expect(odds[0]!.strength).toBe(odds[0]!.elo + odds[0]!.playerQuality);
+});
+
+test("scoreMatrix: normalized and consistent with predictMatch", () => {
+  const table = trainRatings([]);
+  const m = scoreMatrix(table, "Brazil", "Paraguay");
+  const sum = m.flat().reduce((a, b) => a + b, 0);
+  expect(sum).toBeCloseTo(1, 6);
+  const p = predictMatch(table, "Brazil", "Paraguay");
+  let pHome = 0;
+  for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) if (i > j) pHome += m[i]![j]!;
+  expect(pHome).toBeCloseTo(p.pHome, 2);
+});
+
+test("calibrateGoals: blends prior with observed totals", () => {
+  expect(calibrateGoals([])).toBeCloseTo(2.6, 5);
+  // 20 matches of 6 goals each pulls the average up, but the prior anchors it
+  const highScoring = Array.from({ length: 20 }, (_, i) => ev(`T${i}`, `U${i}`, "4", "2"));
+  const calibrated = calibrateGoals(highScoring);
+  expect(calibrated).toBeGreaterThan(2.6);
+  expect(calibrated).toBeLessThan(6);
+  const wide = predictMatch(trainRatings([]), "Brazil", "Paraguay");
+  expect(wide.homeGoals + wide.awayGoals).toBeGreaterThanOrEqual(2);
+  calibrateGoals([]); // reset for other tests
 });
 
 test("outcomeOf parses result", () => {

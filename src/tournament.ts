@@ -2,7 +2,7 @@ import type { Prediction, WcEvent } from "./types.ts";
 import { canonicalTeam, rating, teamStrength } from "./elo.ts";
 import { trainRatings } from "./elo.ts";
 import { flag } from "./format.ts";
-import { predictMatch } from "./predict.ts";
+import { calibrateGoals, predictMatch } from "./predict.ts";
 import { squadAbsencePenalties } from "./injuries.ts";
 import { isFinished, leagueTable, mergedSeasonEvents } from "./sportsdb.ts";
 
@@ -363,7 +363,9 @@ function brazilPathInKnockout(rounds: ProjectedMatch[][]): ProjectedMatch[] {
 
 export async function tournamentProjection(): Promise<TournamentProjection> {
   const all = await mergedSeasonEvents();
-  const table = trainRatings(all.filter(isFinished));
+  const finished = all.filter(isFinished);
+  const table = trainRatings(finished);
+  calibrateGoals(finished);
   absencePens = await squadAbsencePenalties(all).catch(() => new Map<string, number>());
   const groupEvents = all.filter((e) =>
     num(e.intRound) <= 1 &&

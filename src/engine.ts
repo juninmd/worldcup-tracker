@@ -1,7 +1,7 @@
 import type { Prediction, WcEvent, TimelineItem } from "./types.ts";
 import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSeasonEvents, seasonEvents, timeline, substitutionEvents, varIncidents } from "./sportsdb.ts";
 import { trainRatings, outcomeOf } from "./elo.ts";
-import { predictMatch } from "./predict.ts";
+import { calibrateGoals, predictMatch } from "./predict.ts";
 import { championForecast } from "./champion.ts";
 import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag, kickoff, parseUtc } from "./format.ts";
 import { sendMediaGroup, sendMessage, sendPhoto, sendPhotoStrict } from "./telegram.ts";
@@ -22,6 +22,7 @@ import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
 import { writeFile } from "node:fs/promises";
 import { fmtTournamentProjection, tournamentProjection } from "./tournament.ts";
 import { fmtSimulation, simulateKnockout } from "./simulate.ts";
+import { fmtMatchPreview, postBracketOracle, previewMatch } from "./oracle.ts";
 import {
   championChartUrl,
   formChartUrl,
@@ -40,6 +41,7 @@ const HEARTBEAT = new URL("../data/heartbeat", import.meta.url).pathname.replace
 export async function ratingsNow() {
   const all = await mergedSeasonEvents();
   const finished = all.filter(isFinished);
+  calibrateGoals(finished);
   return { all, table: trainRatings(finished) };
 }
 
@@ -162,6 +164,9 @@ export async function postTournamentProjection(pre?: Awaited<ReturnType<typeof t
     const simChart = simulationChartUrl(sim.title, sim.runs);
     if (simChart) await sendPhoto(simChart, `🎲 Monte Carlo — chances reais de título pelo chaveamento`);
     await sendMessage(fmtSimulation(sim));
+    // LLM read of the bracket — best-effort: gateway may be down/slow.
+    await postBracketOracle(projection, sim).catch((err) =>
+      console.error("bracket oracle failed:", (err as Error).message));
   }
 }
 
@@ -186,7 +191,14 @@ export async function postPrematch(e: WcEvent): Promise<void> {
   const art = [eventCover(ev), ev.strHomeTeamBadge, ev.strAwayTeamBadge].filter((x): x is string => !!x);
   const caption = `⚽️ ${ev.strHomeTeam} x ${ev.strAwayTeam}`;
   if (art.length) await sendMediaGroup(art, caption);
-  await sendMessage(fmtPrematch(ev, predictMatch(table, ev.strHomeTeam, ev.strAwayTeam, all, true, pen), absences));
+  const pred = predictMatch(table, ev.strHomeTeam, ev.strAwayTeam, all, true, pen);
+  await sendMessage(fmtPrematch(ev, pred, absences));
+  // Qualitative LLM take on the fixture — best-effort.
+  try {
+    await sendMessage(fmtMatchPreview(ev, await previewMatch(ev, pred, absences)));
+  } catch (err) {
+    console.error("match preview failed:", (err as Error).message);
+  }
 }
 
 async function announceGoal(e: WcEvent, g: TimelineItem, score: string): Promise<boolean> {

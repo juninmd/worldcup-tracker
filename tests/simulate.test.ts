@@ -29,6 +29,10 @@ test("simulateKnockout: probs sum to 1, stronger team wins more, deterministic",
   // same seed → identical result
   const again = simulateKnockout(proj(r32), table, [], 2000)!;
   expect(again.title).toEqual(sim.title);
+  // finals distribution present and normalized-ish
+  expect(sim.finals.length).toBeGreaterThan(0);
+  expect(sim.finals[0]!.label).toContain(" x ");
+  expect(sim.finals.reduce((s, f) => s + f.prob, 0)).toBeLessThanOrEqual(1.000001);
 });
 
 test("simulateKnockout: real results are locked", () => {

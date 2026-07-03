@@ -198,6 +198,19 @@ switch (cmd) {
     console.log(sim ? fmtSimulation(sim) : "no knockout bracket to simulate");
     break;
   }
+  case "oracle":
+  case "oraculo": {
+    const { tournamentProjection } = await import("./tournament.ts");
+    const { simulateKnockout } = await import("./simulate.ts");
+    const { bracketOracle, fmtBracketOracle, postBracketOracle } = await import("./oracle.ts");
+    const projection = await tournamentProjection();
+    const { all, table } = await ratingsNow();
+    const sim = simulateKnockout(projection, table, all);
+    if (!sim) { console.error("no knockout bracket to evaluate"); break; }
+    if (rest[0] === "--send") { await postBracketOracle(projection, sim); console.log("Oracle sent."); break; }
+    console.log(fmtBracketOracle(await bracketOracle(projection, sim)));
+    break;
+  }
   case "champion": {
     const { table, all } = await ratingsNow();
     const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];

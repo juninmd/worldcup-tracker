@@ -1,7 +1,7 @@
 import type { WcEvent } from "./types.ts";
 import type { TournamentProjection } from "./tournament.ts";
 import { canonicalTeam } from "./elo.ts";
-import { predictMatch } from "./predict.ts";
+import { scoreMatrix } from "./predict.ts";
 
 export interface SimTeamOdds {
   team: string;
@@ -13,6 +13,8 @@ export interface SimResult {
   title: SimTeamOdds[]; // desc by prob
   // Per-round survival for one tracked team: prob of reaching each stage.
   brazilFunnel: { stage: string; prob: number }[];
+  // Most frequent title matchups across all runs, desc by prob.
+  finals: { label: string; prob: number }[];
 }
 
 // Deterministic PRNG so simulations are reproducible (and testable).
@@ -53,31 +55,48 @@ export function simulateKnockout(
     for (const m of round) if (m.real) realWinners.set(pairKey(m.home, m.away), canonicalTeam(m.winner));
   }
 
-  // p(home advances) per pairing, memoized across runs.
-  const advanceCache = new Map<string, number>();
-  const pAdvance = (home: string, away: string): number => {
+  // Cumulative scoreline distribution per pairing, memoized across runs.
+  // Sampling the full DC-corrected score matrix (not a win/lose coin) keeps
+  // draw frequency — and thus penalty lotteries — faithful to the model.
+  const cumCache = new Map<string, number[]>();
+  const cumFor = (home: string, away: string): number[] => {
     const key = `${canonicalTeam(home)}>${canonicalTeam(away)}`;
-    let p = advanceCache.get(key);
-    if (p === undefined) {
-      const pred = predictMatch(table, home, away, history, true);
-      p = pred.pHome + pred.pDraw * 0.5; // draw → penalties ≈ coin flip
-      advanceCache.set(key, p);
+    let cum = cumCache.get(key);
+    if (!cum) {
+      const flat = scoreMatrix(table, home, away, history, true).flat();
+      cum = [];
+      let acc = 0;
+      for (const p of flat) cum.push(acc += p);
+      cumCache.set(key, cum);
     }
-    return p;
+    return cum;
+  };
+
+  // Sample a scoreline; regulation draw → penalties ≈ coin flip.
+  const playMatch = (home: string, away: string): string => {
+    const cum = cumFor(home, away);
+    const r = rand() * cum[cum.length - 1]!;
+    let cell = cum.findIndex((c) => r < c);
+    if (cell < 0) cell = cum.length - 1;
+    const hg = Math.floor(cell / 9), ag = cell % 9;
+    if (hg > ag) return canonicalTeam(home);
+    if (ag > hg) return canonicalTeam(away);
+    return rand() < 0.5 ? canonicalTeam(home) : canonicalTeam(away);
   };
 
   const titleCounts = new Map<string, number>();
+  const finalCounts = new Map<string, number>();
   const brazilCounts = new Array(STAGES.length).fill(0);
 
   for (let run = 0; run < runs; run++) {
-    let alive = r32.map((m) => {
-      const locked = realWinners.get(pairKey(m.home, m.away));
-      if (locked) return locked;
-      return rand() < pAdvance(m.home, m.away) ? canonicalTeam(m.home) : canonicalTeam(m.away);
-    });
+    let alive = r32.map((m) => realWinners.get(pairKey(m.home, m.away)) ?? playMatch(m.home, m.away));
     // R32 winners reached Oitavas; each later round survived bumps the stage.
     for (let stage = 0; stage < STAGES.length; stage++) {
       if (alive.includes("Brazil")) brazilCounts[stage]++;
+      if (alive.length === 2) {
+        const label = [...alive].sort().join(" x ");
+        finalCounts.set(label, (finalCounts.get(label) ?? 0) + 1);
+      }
       if (alive.length <= 1) {
         for (let s = stage + 1; s < STAGES.length; s++) if (alive.includes("Brazil")) brazilCounts[s]++;
         break;
@@ -85,8 +104,7 @@ export function simulateKnockout(
       const next: string[] = [];
       for (let i = 0; i + 1 < alive.length; i += 2) {
         const [h, a] = [alive[i]!, alive[i + 1]!];
-        const locked = realWinners.get(pairKey(h, a));
-        next.push(locked ?? (rand() < pAdvance(h, a) ? h : a));
+        next.push(realWinners.get(pairKey(h, a)) ?? playMatch(h, a));
       }
       if (alive.length % 2 === 1) next.push(alive[alive.length - 1]!);
       alive = next;
@@ -99,7 +117,11 @@ export function simulateKnockout(
     .map(([team, n]) => ({ team, prob: n / runs }))
     .sort((a, b) => b.prob - a.prob);
   const brazilFunnel = STAGES.map((stage, i) => ({ stage, prob: brazilCounts[i]! / runs }));
-  return { runs, title, brazilFunnel };
+  const finals = [...finalCounts.entries()]
+    .map(([label, n]) => ({ label, prob: n / runs }))
+    .sort((a, b) => b.prob - a.prob)
+    .slice(0, 5);
+  return { runs, title, brazilFunnel, finals };
 }
 
 const pct = (p: number) => `${(p * 100).toFixed(1)}%`;
@@ -114,6 +136,10 @@ export function fmtSimulation(sim: SimResult): string {
   for (const [i, t] of sim.title.slice(0, 8).entries()) {
     const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "▪️";
     lines.push(`${medal} ${t.team} — *${pct(t.prob)}*`);
+  }
+  if (sim.finals.length) {
+    lines.push(``, `🏟 *Finais mais prováveis:*`);
+    for (const f of sim.finals.slice(0, 3)) lines.push(`• ${f.label} — ${pct(f.prob)}`);
   }
   if (sim.brazilFunnel.some((f) => f.prob > 0)) {
     lines.push(``, `🇧🇷 *Funil do Brasil:*`);
