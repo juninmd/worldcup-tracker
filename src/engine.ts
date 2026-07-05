@@ -248,7 +248,13 @@ async function catchUpGoals(e: WcEvent, state: Awaited<ReturnType<typeof loadSta
     const ord = side === "H" ? ++hi : ++ai;
     const key = `${ev.idEvent}:${side}:${ord}`;
     if (state.postedGoals.includes(key)) return;
-    if (await body()) state.postedGoals.push(key);
+    if (await body()) {
+      state.postedGoals.push(key);
+      // Persist right after the send, not just at the end of pollOnce() — a
+      // crash mid-cycle (OOMKill, etc.) must not lose this dedup key and
+      // cause the goal to be re-announced on the next poll.
+      await saveState(state);
+    }
   };
 
   for (const g of goals) { // known scorers, progressively by minute
@@ -267,12 +273,14 @@ async function catchUpMatchEvents(e: WcEvent, state: Awaited<ReturnType<typeof l
     if (state.postedSubs.includes(key)) continue;
     await sendMessage(`🔄 *Substituição* — ${flag(s.team ?? "")} ${s.team}\n${s.minute}' ${s.playerIn} 🔼 entra no lugar de 🔽 ${s.playerOut}`);
     state.postedSubs.push(key);
+    await saveState(state);
   }
   for (const v of vr) {
     const key = `${e.idEvent}:${v.minute}`;
     if (state.postedVar.includes(key)) continue;
     await sendMessage(`🖥 *VAR* — ${e.strHomeTeam} x ${e.strAwayTeam}\n${v.minute}' ${v.comment ?? "Revisão do VAR"}`);
     state.postedVar.push(key);
+    await saveState(state);
   }
 }
 
@@ -299,6 +307,7 @@ async function checkUpcomingAlerts(all: WcEvent[], state: Awaited<ReturnType<typ
       e.strVenue ? `🏟 ${e.strVenue}${e.strCity ? ` — ${e.strCity}` : ""}` : "",
     ].filter(Boolean).join("\n"));
     state.postedUpcomingAlert.push(e.idEvent);
+    await saveState(state);
   }
 }
 
@@ -316,6 +325,7 @@ export async function pollOnce(): Promise<number> {
       if (!state.prematchPosted.includes(e.idEvent)) {
         await postPrematch(e);
         state.prematchPosted.push(e.idEvent);
+        await saveState(state);
       }
       await catchUpGoals(e, state);
       await catchUpMatchEvents(e, state);
@@ -325,10 +335,10 @@ export async function pollOnce(): Promise<number> {
         await catchUpGoals(e, state); // flush late goals before the FT summary
         await postFulltime(e);
         state.fulltimePosted.push(e.idEvent);
+        await saveState(state);
       }
     }
   }
-  await saveState(state);
   return live;
 }
 
