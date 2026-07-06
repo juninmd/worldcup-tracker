@@ -35,12 +35,35 @@ async function call(method: string, body: Record<string, unknown>): Promise<void
   }
 }
 
-export function sendMessage(text: string, preview = false): Promise<void> {
-  return call("sendMessage", {
-    text,
-    parse_mode: "Markdown",
-    disable_web_page_preview: !preview,
-  });
+// Telegram hard-caps a text message at 4096 chars; a verbose LLM take can exceed
+// it and the whole post is rejected (400 "message is too long"). Split on line
+// boundaries so long content still lands instead of vanishing.
+const TG_MAX = 4096;
+
+function splitForTelegram(text: string): string[] {
+  if (text.length <= TG_MAX) return [text];
+  const chunks: string[] = [];
+  let buf = "";
+  const flush = () => { if (buf) { chunks.push(buf); buf = ""; } };
+  for (const line of text.split("\n")) {
+    // A single line longer than the cap can't ride in one message — slice it.
+    let rest = line;
+    while (rest.length > TG_MAX) { flush(); chunks.push(rest.slice(0, TG_MAX)); rest = rest.slice(TG_MAX); }
+    if (buf.length + rest.length + 1 > TG_MAX) flush();
+    buf = buf ? `${buf}\n${rest}` : rest;
+  }
+  if (buf) chunks.push(buf);
+  return chunks;
+}
+
+export async function sendMessage(text: string, preview = false): Promise<void> {
+  for (const chunk of splitForTelegram(text)) {
+    await call("sendMessage", {
+      text: chunk,
+      parse_mode: "Markdown",
+      disable_web_page_preview: !preview,
+    });
+  }
 }
 
 export async function sendPhoto(photoUrl: string, caption: string): Promise<void> {

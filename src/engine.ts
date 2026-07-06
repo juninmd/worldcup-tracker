@@ -334,10 +334,17 @@ export async function pollOnce(): Promise<number> {
 
 export async function trackForever(): Promise<void> {
   console.log(`Tracking WC live every ${config.pollIntervalSec}s…`);
+  let prevLive = -1;
   for (;;) {
     try {
       const live = await pollOnce();
-      console.log(`[${new Date().toISOString()}] live=${live}`);
+      // Log only when the live-match count changes — a per-tick heartbeat floods
+      // ~5.8k lines/day and buries real errors. The heartbeat file below already
+      // proves liveness for the k8s probe.
+      if (live !== prevLive) {
+        console.log(`[${new Date().toISOString()}] live=${live}`);
+        prevLive = live;
+      }
     } catch (err) {
       console.error("poll error:", (err as Error).message);
     }
