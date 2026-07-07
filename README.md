@@ -18,11 +18,12 @@ camisa e resumo do jogador**, e comparação **expectativa × realidade** no fim
 - 📈 **Estatísticas oficiais derivadas da timeline FIFA** — finalizações, escanteios, faltas e cartões com barra comparativa.
 - 🥇 **Artilharia** — ranking de gols da edição (trata gol contra).
 - 🟨 **Cartões** — ranking de cartões amarelos/vermelhos da edição, por jogador.
-- 🧠 **Análise da partida com IA** — Claude lê os dados oficiais (placar, estatísticas,
-  gols, cartões, titulares) e produz melhor em campo, destaques, quem merecia
-  vencer e quem mais errou, em português. Inclui mapa de calor de intensidade
-  do jogo por período (finalizações/escanteios/faltas/cartões/gols ao longo dos
-  minutos — a FIFA não expõe posicionamento em campo no feed gratuito).
+- 🧠 **Análise da partida com IA** — o LiteLLM do cluster lê os dados oficiais (placar, estatísticas,
+  gols, cartões, substituições, VAR, intensidade por período e titulares), lista todas as estatísticas e acontecimentos,
+  avalia se o placar foi justo, se houve azar/ineficiência, quem merecia vencer,
+  melhor em campo, destaques e quem mais errou, em português. Inclui mapa de calor
+  de intensidade do jogo por período (finalizações/escanteios/faltas/cartões/gols
+  ao longo dos minutos — a FIFA não expõe posicionamento em campo no feed gratuito).
 - 🧠 **Treinamento** — ratings Elo partem de uma base e são ajustados após cada resultado real
   (peso por saldo de gols), refinando previsões conforme a Copa avança.
 - 🧩 **Fallback oficial de grupos** — quando o feed gratuito vem parcial, a simulação usa os 12 grupos oficiais da Copa 2026 e substitui os jogos por resultados reais assim que aparecem.
@@ -37,8 +38,8 @@ cp .env.example .env   # preencha TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID
 ```
 
 > **Análise com IA:** o comando `analysis` chama o gateway LiteLLM do cluster
-> (`LITELLM_BASE_URL`/`LITELLM_API_KEY`/`LITELLM_MODEL` no `.env`), não a API da
-> Claude. Os demais comandos funcionam sem essas variáveis.
+> (`LITELLM_BASE_URL`/`LITELLM_API_KEY`/`LITELLM_MODEL` no `.env`). Os demais
+> comandos funcionam sem essas variáveis.
 
 > **Importante:** adicione o bot ao canal/grupo de destino e dê permissão de
 > postar (admin, em canais). Sem isso o Telegram responde `chat not found`.
@@ -76,7 +77,7 @@ src/
   format.ts     mensagens pt-BR (menu, pré-jogo, gol, fim de jogo)
   scorers.ts    artilharia da edição
   cards.ts      ranking de cartões da edição
-  analysis.ts   análise da partida com IA (Claude) + mapa de calor de intensidade
+  analysis.ts   análise da partida com IA (LiteLLM do cluster) + mapa de calor de intensidade
   charts.ts     cards PNG via QuickChart (artilharia, cartões, mapa de calor, chave, etc.)
   state.ts      dedup (gols/pré-jogo/fim já postados)
   engine.ts     orquestração: menu, poll ao vivo, replay

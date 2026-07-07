@@ -20,6 +20,9 @@ const digest: MatchDigest = {
     { intTime: "80", strPlayer: "Messi", strTeam: "Argentina", strTimelineDetail: "Penalty" } as never,
   ],
   cards: [{ intTime: "67", strPlayer: "Casemiro", strTeam: "Brazil", strHome: "yes", cardType: "yellow" }],
+  substitutions: [{ minute: "70", team: "Argentina", playerIn: "Di Maria", playerOut: "De Paul" }],
+  varIncidents: [{ minute: "79", team: "Argentina", comment: "Penalty confirmed" }],
+  intensity: [{ label: "76+", home: 1, away: 4 }],
   homeLineup: ["Alisson", "Vinicius Junior"],
   awayLineup: ["Messi"],
 };
@@ -31,19 +34,36 @@ test("digestPrompt: includes score, stats, goals, cards and lineups in the promp
   expect(prompt).toContain("23' Vinicius Junior (Brazil)");
   expect(prompt).toContain("80' Messi (Argentina) [Penalty]");
   expect(prompt).toContain("67' Casemiro (Brazil) — amarelo");
+  expect(prompt).toContain("70' Di Maria entrou, De Paul saiu (Argentina)");
+  expect(prompt).toContain("79' Argentina: Penalty confirmed");
+  expect(prompt).toContain("76+: 1 / 4");
   expect(prompt).toContain("Titulares Brazil: Alisson, Vinicius Junior");
 });
 
 test("digestPrompt: reports no goals/cards when none happened", () => {
-  const empty: MatchDigest = { ...digest, goals: [], cards: [] };
+  const empty: MatchDigest = { ...digest, goals: [], cards: [], substitutions: [], varIncidents: [] };
   const prompt = digestPrompt(empty);
   expect(prompt).toContain("nenhum gol registrado");
   expect(prompt).toContain("nenhum cartão registrado");
+  expect(prompt).toContain("nenhuma substituição registrada");
+  expect(prompt).toContain("nenhuma revisão de VAR registrada");
 });
 
 test("fmtAnalysis: renders the LLM analysis and the match's card list", () => {
   const analysis: MatchAnalysis = {
     resumo: "Brasil venceu um jogo equilibrado com eficiência ofensiva superior.",
+    acontecimentosChave: [
+      "Vinicius Junior abriu o placar aos 23 minutos.",
+      "Messi descontou de pênalti aos 80 minutos.",
+      "Casemiro recebeu amarelo aos 67 minutos.",
+    ],
+    leituraEstatistica: [
+      "O Brasil finalizou mais no alvo: 6 contra 3.",
+      "A Argentina seguiu viva pela bola parada.",
+      "A disciplina pesou pelo cartão de Casemiro.",
+    ],
+    placarJusto: { veredito: "justo", motivo: "O Brasil teve mais finalizações no alvo e venceu pela margem mínima." },
+    azar: { time: "Argentina", motivo: "Teve menos volume no alvo e precisou de pênalti para marcar." },
     melhorEmCampo: { jogador: "Vinicius Junior", time: "Brazil", motivo: "Decidiu o jogo com um gol." },
     destaques: [{ jogador: "Alisson", time: "Brazil", motivo: "Defesas decisivas." }],
     mereciaGanhar: { time: "Brazil", motivo: "Criou mais chances claras." },
@@ -53,8 +73,19 @@ test("fmtAnalysis: renders the LLM analysis and the match's card list", () => {
   const out = fmtAnalysis(digest, analysis);
   expect(out).toContain("ANÁLISE DA PARTIDA (IA)");
   expect(out).toContain("Brazil 2 x 1 Argentina");
+  expect(out).toContain("Todas as estatísticas oficiais");
+  expect(out).toContain("Shots on Goal: 6 x 3");
+  expect(out).toContain("Acontecimentos oficiais");
+  expect(out).toContain("23' 🇧🇷 Vinicius Junior (Brazil)");
+  expect(out).toContain("80' 🇦🇷 Messi (Argentina) — Penalty");
+  expect(out).toContain("67' 🇧🇷 Casemiro (Brazil) — amarelo");
+  expect(out).toContain("70' 🇦🇷 Di Maria entrou, De Paul saiu (Argentina)");
+  expect(out).toContain("79' 🇦🇷 VAR (Argentina) — Penalty confirmed");
+  expect(out).toContain("Intensidade por período");
+  expect(out).toContain("76+: 1 x 4");
+  expect(out).toContain("Placar justo?");
+  expect(out).toContain("justo — O Brasil teve mais finalizações no alvo");
+  expect(out).toContain("Azar / ineficiência");
   expect(out).toContain("Vinicius Junior");
   expect(out).toContain("Otamendi");
-  expect(out).toContain("Cartões da partida");
-  expect(out).toContain("67' 🇧🇷 Casemiro (Brazil) 🟨");
 });
