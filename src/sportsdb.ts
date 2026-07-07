@@ -74,6 +74,9 @@ type FifaMatch = {
   Away: FifaTeam | null;
   HomeTeamScore: number | null;
   AwayTeamScore: number | null;
+  HomeTeamPenaltyScore?: number | null;
+  AwayTeamPenaltyScore?: number | null;
+  Winner?: string | null;
   MatchStatus: number;
   MatchTime?: string | null;
   MatchNumber?: number | null;
@@ -158,8 +161,11 @@ export function mapFifaMatch(match: FifaMatch): WcEvent {
     strAwayTeam: away,
     idHomeTeam: match.Home?.IdTeam ?? match.PlaceHolderA ?? "",
     idAwayTeam: match.Away?.IdTeam ?? match.PlaceHolderB ?? "",
+    idWinnerTeam: match.Winner ?? null,
     intHomeScore: match.HomeTeamScore === null || match.HomeTeamScore === undefined ? null : String(match.HomeTeamScore),
     intAwayScore: match.AwayTeamScore === null || match.AwayTeamScore === undefined ? null : String(match.AwayTeamScore),
+    intHomePenaltyScore: match.HomeTeamPenaltyScore === null || match.HomeTeamPenaltyScore === undefined ? null : String(match.HomeTeamPenaltyScore),
+    intAwayPenaltyScore: match.AwayTeamPenaltyScore === null || match.AwayTeamPenaltyScore === undefined ? null : String(match.AwayTeamPenaltyScore),
     strVenue: text(match.Stadium?.Name),
     strLeague: "FIFA World Cup",
     strStage: text(match.StageName) || null,

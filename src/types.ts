@@ -23,8 +23,11 @@ export interface WcEvent {
   strAwayTeam: string;
   idHomeTeam: string;
   idAwayTeam: string;
+  idWinnerTeam?: string | null;
   intHomeScore: string | null;
   intAwayScore: string | null;
+  intHomePenaltyScore?: string | null;
+  intAwayPenaltyScore?: string | null;
   strVenue: string | null;
   strLeague: string;
   strStage?: string | null;

@@ -135,6 +135,23 @@ function winner(home: string, away: string, p: Prediction, table: Record<string,
   return teamStrength(table, home) >= teamStrength(table, away) ? home : away;
 }
 
+function realWinner(e: WcEvent, home: string, away: string, table: Record<string, number>, pred: Prediction): string {
+  if (e.idWinnerTeam === e.idHomeTeam) return canonicalTeam(e.strHomeTeam);
+  if (e.idWinnerTeam === e.idAwayTeam) return canonicalTeam(e.strAwayTeam);
+
+  const hs = Number(e.intHomeScore);
+  const as = Number(e.intAwayScore);
+  if (hs > as) return canonicalTeam(e.strHomeTeam);
+  if (as > hs) return canonicalTeam(e.strAwayTeam);
+
+  const hps = Number(e.intHomePenaltyScore);
+  const aps = Number(e.intAwayPenaltyScore);
+  if (hps > aps) return canonicalTeam(e.strHomeTeam);
+  if (aps > hps) return canonicalTeam(e.strAwayTeam);
+
+  return winner(home, away, pred, table);
+}
+
 async function projectedGroups(events: WcEvent[], table: Record<string, number>): Promise<Map<string, ProjectedTeam[]>> {
   const rows = await leagueTable();
   const trustTable = rows.length >= 48;
@@ -260,7 +277,8 @@ function buildFifaBracket(
     const pred = isFinished(e) && hasRealScore
       ? { ...predicted, homeGoals: hs, awayGoals: as }
       : predicted;
-    const projected: ProjectedMatch = { round, home, away, prediction: pred, winner: winner(home, away, pred, table), real: isFinished(e) && hasRealScore };
+    const win = isFinished(e) && hasRealScore ? realWinner(e, home, away, table, pred) : winner(home, away, pred, table);
+    const projected: ProjectedMatch = { round, home, away, prediction: pred, winner: win, real: isFinished(e) && hasRealScore };
     (byRound.get(round) ?? byRound.set(round, []).get(round)!).push(projected);
     winners.set(String(matchNo(e)), projected.winner);
   }
@@ -302,9 +320,7 @@ function buildOfficialBracket(
       const hs = num(realHome ? real.intHomeScore : real.intAwayScore);
       const as = num(realHome ? real.intAwayScore : real.intHomeScore);
       const realPred: Prediction = { ...pred, homeGoals: hs, awayGoals: as };
-      // Decisive score → real winner; tie (decided on penalties, no shootout field
-      // in the free feed) → fall back to the model's edge so a survivor still propagates.
-      const win = hs > as ? h : as > hs ? a : winner(h, a, pred, table);
+      const win = realWinner(real, h, a, table, pred);
       return { round, home: h, away: a, prediction: realPred, winner: win, real: true };
     }
     return { round, home: h, away: a, prediction: pred, winner: winner(h, a, pred, table) };

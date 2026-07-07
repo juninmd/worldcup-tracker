@@ -55,6 +55,15 @@ export function simulateKnockout(
     for (const m of round) if (m.real) realWinners.set(pairKey(m.home, m.away), canonicalTeam(m.winner));
   }
 
+  const applyRealRound = (alive: string[], roundIndex: number): string[] => {
+    const realMatches = projection.knockout[roundIndex]?.filter((m) => m.real) ?? [];
+    if (!realMatches.length) return alive;
+
+    const involved = new Set(realMatches.flatMap((m) => [canonicalTeam(m.home), canonicalTeam(m.away)]));
+    const locked = realMatches.map((m) => canonicalTeam(m.winner));
+    return [...locked, ...alive.filter((team) => !involved.has(team))];
+  };
+
   // Cumulative scoreline distribution per pairing, memoized across runs.
   // Sampling the full DC-corrected score matrix (not a win/lose coin) keeps
   // draw frequency — and thus penalty lotteries — faithful to the model.
@@ -101,6 +110,8 @@ export function simulateKnockout(
         for (let s = stage + 1; s < STAGES.length; s++) if (alive.includes("Brazil")) brazilCounts[s]++;
         break;
       }
+      alive = applyRealRound(alive, stage + 1);
+      if (alive.length <= 1) continue;
       const next: string[] = [];
       for (let i = 0; i + 1 < alive.length; i += 2) {
         const [h, a] = [alive[i]!, alive[i + 1]!];

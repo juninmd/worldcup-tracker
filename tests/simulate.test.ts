@@ -12,6 +12,10 @@ const proj = (r32: ProjectedMatch[]): TournamentProjection => ({
   generatedAt: "", groups: new Map(), qualifiers: [], knockout: [r32], champion: "", brazilPath: [],
 });
 
+const projRounds = (knockout: ProjectedMatch[][]): TournamentProjection => ({
+  generatedAt: "", groups: new Map(), qualifiers: [], knockout, champion: "", brazilPath: [],
+});
+
 const table = trainRatings([]);
 
 test("simulateKnockout: probs sum to 1, stronger team wins more, deterministic", () => {
@@ -44,6 +48,43 @@ test("simulateKnockout: real results are locked", () => {
   const p = Object.fromEntries(sim.title.map((t) => [t.team, t.prob]));
   expect(p["Brazil"]).toBeUndefined();
   expect(sim.brazilFunnel.every((f) => f.prob === 0)).toBe(true);
+});
+
+test("simulateKnockout: eliminated teams keep zero title chance", () => {
+  const r32 = [
+    match("Haiti", "Brazil", "Haiti", true),
+    match("Germany", "Japan", "Japan", true),
+    match("France", "Panama", "France"),
+    match("Argentina", "Qatar", "Argentina"),
+  ];
+  const sim = simulateKnockout(proj(r32), table, [], 500)!;
+  const p = Object.fromEntries(sim.title.map((t) => [t.team, t.prob]));
+
+  expect(p["Brazil"] ?? 0).toBe(0);
+  expect(p["Germany"] ?? 0).toBe(0);
+  expect(fmtSimulation(sim)).not.toContain("Brazil —");
+  expect(fmtSimulation(sim)).not.toContain("Germany —");
+});
+
+test("simulateKnockout: later real knockout losses override simulated pairings", () => {
+  const sim = simulateKnockout(projRounds([
+    [
+      match("Brazil", "Japan", "Brazil", true),
+      match("France", "Panama", "France", true),
+      match("Norway", "Sweden", "Norway", true),
+      match("Argentina", "Qatar", "Argentina", true),
+    ],
+    [
+      match("Brazil", "Norway", "Norway", true),
+      match("France", "Argentina", "France"),
+    ],
+  ]), table, [], 500)!;
+  const p = Object.fromEntries(sim.title.map((t) => [t.team, t.prob]));
+
+  expect(p["Brazil"] ?? 0).toBe(0);
+  expect(sim.brazilFunnel.find((f) => f.stage === "Oitavas")?.prob).toBe(1);
+  expect(sim.brazilFunnel.find((f) => f.stage === "Quartas")?.prob).toBe(0);
+  expect(fmtSimulation(sim)).not.toContain("Brazil —");
 });
 
 test("simulateKnockout: brazil funnel is monotonically non-increasing", () => {

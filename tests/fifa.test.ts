@@ -28,6 +28,9 @@ test("mapFifaMatch: maps official FIFA match payload to WcEvent", () => {
     },
     HomeTeamScore: 2,
     AwayTeamScore: 0,
+    HomeTeamPenaltyScore: null,
+    AwayTeamPenaltyScore: null,
+    Winner: "43911",
     MatchStatus: 0,
     MatchTime: "98'",
     MatchNumber: 1,
@@ -45,6 +48,7 @@ test("mapFifaMatch: maps official FIFA match payload to WcEvent", () => {
     strAwayTeam: "South Africa",
     intHomeScore: "2",
     intAwayScore: "0",
+    idWinnerTeam: "43911",
     strStatus: "FT",
     strVenue: "Mexico City Stadium",
     strGroup: "Group A",
@@ -65,6 +69,9 @@ test("mapFifaMatch: preserves official stage and placeholders for knockout", () 
     Away: null,
     HomeTeamScore: null,
     AwayTeamScore: null,
+    HomeTeamPenaltyScore: null,
+    AwayTeamPenaltyScore: null,
+    Winner: null,
     MatchStatus: 1,
     MatchNumber: 89,
     PlaceHolderA: "W74",
@@ -80,6 +87,49 @@ test("mapFifaMatch: preserves official stage and placeholders for knockout", () 
   expect(event.strPlaceHolderA).toBe("W74");
   expect(event.strPlaceHolderB).toBe("W77");
   expect(event.intRound).toBe("89");
+});
+
+test("mapFifaMatch: preserves official penalty winner fields", () => {
+  const event = mapFifaMatch({
+    IdMatch: "ko-pen",
+    IdCompetition: "17",
+    IdSeason: "285023",
+    Date: "2026-07-04T21:00:00Z",
+    Home: {
+      Score: 1,
+      IdTeam: "43924",
+      IdCountry: "BRA",
+      ShortClubName: "Brazil",
+      TeamName: [{ Locale: "en-GB", Description: "Brazil" }],
+    },
+    Away: {
+      Score: 1,
+      IdTeam: "43928",
+      IdCountry: "HAI",
+      ShortClubName: "Haiti",
+      TeamName: [{ Locale: "en-GB", Description: "Haiti" }],
+    },
+    HomeTeamScore: 1,
+    AwayTeamScore: 1,
+    HomeTeamPenaltyScore: 3,
+    AwayTeamPenaltyScore: 4,
+    Winner: "43928",
+    MatchStatus: 0,
+    MatchNumber: 73,
+    GroupName: [],
+    StageName: [{ Locale: "en-GB", Description: "Round of 32" }],
+    Stadium: null,
+  });
+
+  expect(event).toMatchObject({
+    strHomeTeam: "Brazil",
+    strAwayTeam: "Haiti",
+    intHomeScore: "1",
+    intAwayScore: "1",
+    intHomePenaltyScore: "3",
+    intAwayPenaltyScore: "4",
+    idWinnerTeam: "43928",
+  });
 });
 
 test("mapFifaTimelineEvent: extracts goal scorer from FIFA timeline", () => {
