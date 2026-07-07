@@ -1,9 +1,9 @@
 import type { Prediction, WcEvent, TimelineItem } from "./types.ts";
-import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSeasonEvents, seasonEvents, timeline, substitutionEvents, varIncidents } from "./sportsdb.ts";
+import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSeasonEvents, seasonEvents, timeline, substitutionEvents, varIncidents, cardEvents } from "./sportsdb.ts";
 import { trainRatings, outcomeOf } from "./elo.ts";
 import { calibrateGoals, predictMatch } from "./predict.ts";
 import { championForecast } from "./champion.ts";
-import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag, kickoff, parseUtc } from "./format.ts";
+import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag, isUpset, kickoff, parseUtc } from "./format.ts";
 import { sendMediaGroup, sendMessage, sendPhoto, sendPhotoStrict } from "./telegram.ts";
 import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
@@ -15,6 +15,7 @@ import { postStreaks } from "./streaks.ts";
 import { postConfederations } from "./confederations.ts";
 import { postTournamentInfo } from "./tourneyinfo.ts";
 import { fmtLineup, fmtStats, postDetails } from "./details.ts";
+import { postMatchAnalysis } from "./analysis.ts";
 import { buildStarterHistory, lineupPenalty, missingKeyPlayers, squadAbsencePenalties } from "./injuries.ts";
 import { canonicalTeam } from "./elo.ts";
 import { postStandings } from "./standings.ts";
@@ -209,14 +210,26 @@ async function announceGoal(e: WcEvent, g: TimelineItem, score: string): Promise
   return true;
 }
 
-export async function postFulltime(e: WcEvent): Promise<void> {
+export async function postFulltime(e: WcEvent, state?: Awaited<ReturnType<typeof loadState>>): Promise<void> {
   const { all, table } = await ratingsNow();
   const ev = (await eventDetail(e.idEvent)) ?? e;
   const pred = predictMatch(table, ev.strHomeTeam, ev.strAwayTeam, all);
   let goals = onlyGoals(await timeline(ev.idEvent));
   await sendMessage(fmtFulltime(ev, pred, goals));
   await postDetails(ev);
-  if (ev.strVideo) await sendMessage(`🎥 *Melhores lances*\n${ev.strVideo}`, true); // preview embeds the clip
+
+  const h = Number(ev.intHomeScore), a = Number(ev.intAwayScore);
+  if (state && isUpset(pred, h, a) && !state.postedAnalysis.includes(ev.idEvent)) {
+    // Zebra result — ask the LLM analyst to dig into why the favourite fell,
+    // reusing the same post-match digest as the manual `analysis --send` command.
+    try {
+      await postMatchAnalysis(ev);
+    } catch (err) {
+      console.error("zebra analysis failed:", (err as Error).message);
+    }
+    state.postedAnalysis.push(ev.idEvent);
+    await saveState(state);
+  }
 }
 
 const utcDay = (offset: number): string =>
@@ -284,6 +297,22 @@ async function catchUpMatchEvents(e: WcEvent, state: Awaited<ReturnType<typeof l
   }
 }
 
+/** Announce yellow/red cards as they land in the FIFA timeline — a card (esp. a
+ *  red) is often the single biggest explanation for a zebra result, so it must
+ *  reach the channel live instead of only surfacing in the post-match digest. */
+async function catchUpCards(e: WcEvent, state: Awaited<ReturnType<typeof loadState>>): Promise<void> {
+  const cards = await cardEvents(e.idEvent);
+  for (const c of cards) {
+    const key = `${e.idEvent}:${c.idTimeline ?? `${c.intTime}:${c.strPlayer}:${c.cardType}`}`;
+    if (state.postedCards.includes(key)) continue;
+    const icon = c.cardType === "red" ? "🟥" : "🟨";
+    const label = c.cardType === "red" ? "Cartão vermelho" : "Cartão amarelo";
+    await sendMessage(`${icon} *${label}* — ${flag(c.strTeam ?? "")} ${c.strTeam ?? ""}\n${c.intTime}' ${c.strPlayer ?? "?"}`);
+    state.postedCards.push(key);
+    await saveState(state);
+  }
+}
+
 const UPCOMING_ALERT_WINDOW_MIN = 30;
 
 /** Heads-up ~30min before kickoff for any match not yet live, so people know
@@ -329,11 +358,13 @@ export async function pollOnce(): Promise<number> {
       }
       await catchUpGoals(e, state);
       await catchUpMatchEvents(e, state);
+      await catchUpCards(e, state);
     }
     if (isFinished(e) && !state.fulltimePosted.includes(e.idEvent)) {
       if (state.prematchPosted.includes(e.idEvent)) {
         await catchUpGoals(e, state); // flush late goals before the FT summary
-        await postFulltime(e);
+        await catchUpCards(e, state); // flush any card issued in the closing minutes
+        await postFulltime(e, state);
         state.fulltimePosted.push(e.idEvent);
         await saveState(state);
       }
@@ -398,7 +429,6 @@ export async function replayDate(date: string): Promise<void> {
       await Bun.sleep(1200);
       const st = fmtStats(e, await eventStats(e.idEvent));
       if (st) { await sendMessage(st); await Bun.sleep(1200); }
-      if (e.strVideo) { await sendMessage(`🎥 *Melhores lances*\n${e.strVideo}`, true); await Bun.sleep(1200); }
     }
   }
 }

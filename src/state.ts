@@ -11,10 +11,13 @@ interface State {
   postedSubs: string[]; // `${idEvent}:${minute}:${playerIn}`
   postedVar: string[]; // `${idEvent}:${minute}`
   postedUpcomingAlert: string[]; // idEvent — "starts in ~30min" heads-up
+  postedCards: string[]; // `${idEvent}:${idTimeline|minute:player:cardType}`
+  postedAnalysis: string[]; // idEvent — zebra-triggered post-match AI analysis
 }
 
 const empty: State = {
   postedGoals: [], prematchPosted: [], fulltimePosted: [], postedSubs: [], postedVar: [], postedUpcomingAlert: [],
+  postedCards: [], postedAnalysis: [],
 };
 
 export async function loadState(): Promise<State> {

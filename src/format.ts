@@ -166,7 +166,30 @@ export function fmtGoalCaption(g: TimelineItem, e: WcEvent, pl: Player | null, s
     }
     if (pl.strDescriptionEN) lines.push(``, `📝 ${pl.strDescriptionEN.slice(0, 240)}…`);
   }
+  if (g.strPlayer) {
+    lines.push(
+      ``,
+      `🎥 [Vídeo do gol (buscar)](${youtubeSearchLink(`${g.strPlayer} gol ${team} ${e.strHomeTeam} x ${e.strAwayTeam} Copa do Mundo 2026`)})`,
+      `🎬 [Vídeos do jogador — FIFA (buscar)](${youtubeSearchLink(`${g.strPlayer} FIFA World Cup 2026`)})`,
+    );
+  }
   return lines.join("\n");
+}
+
+// A win is a "zebra" (upset) when the winner was given under 35% by the model —
+// used both to flag it in the fulltime message and to decide whether to trigger
+// an automatic post-match AI analysis (see engine.ts postFulltime).
+const UPSET_THRESHOLD = 0.35;
+
+export function isUpset(p: Prediction, homeGoals: number, awayGoals: number): boolean {
+  return (homeGoals > awayGoals && p.pHome < UPSET_THRESHOLD) || (awayGoals > homeGoals && p.pAway < UPSET_THRESHOLD);
+}
+
+/** YouTube search deep-link. FIFA's public match API exposes no goal-clip or
+ *  player-highlight video URLs (verified empty across every squad, incl. stars
+ *  like Messi/Mbappé/Neymar) — this is the best one-tap path to real footage. */
+export function youtubeSearchLink(query: string): string {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }
 
 export function fmtFulltime(e: WcEvent, p: Prediction, scorers: TimelineItem[]): string {
@@ -185,8 +208,10 @@ export function fmtFulltime(e: WcEvent, p: Prediction, scorers: TimelineItem[]):
   const rankLine = (p.fifaRankHome && p.fifaRankAway)
     ? `🌍 FIFA #${p.fifaRankHome} ${e.strHomeTeam} vs #${p.fifaRankAway} ${e.strAwayTeam}`
     : "";
-  const upset = (h > a && p.pHome < 0.35) || (a > h && p.pAway < 0.35)
-    ? "⚡ *ZEBRA!* O azarão venceu." : "";
+  const underdog = h > a ? { team: e.strHomeTeam, chance: p.pHome } : { team: e.strAwayTeam, chance: p.pAway };
+  const upset = isUpset(p, h, a)
+    ? `⚡ *ZEBRA!* ${underdog.team} venceu com apenas ${pct(underdog.chance)} de chance no modelo.` : "";
+  const highlightsQuery = `${e.strHomeTeam} x ${e.strAwayTeam} melhores momentos Copa do Mundo 2026`;
   return [
     `⏱ *FIM DE JOGO*`,
     `${flag(e.strHomeTeam)} *${e.strHomeTeam} ${h} x ${a} ${e.strAwayTeam}* ${flag(e.strAwayTeam)}${decider}`,
@@ -204,7 +229,7 @@ export function fmtFulltime(e: WcEvent, p: Prediction, scorers: TimelineItem[]):
     ``,
     `⚽️ *Gols:*`,
     goals,
-    e.strVideo ? `\n📺 [Melhores momentos](${e.strVideo})` : "",
+    `\n📺 [Melhores momentos (buscar)](${youtubeSearchLink(highlightsQuery)})`,
   ].filter(Boolean).join("\n");
 }
 
