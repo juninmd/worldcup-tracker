@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import type { WcEvent, EventStat, TimelineItem, CardEvent, IntensityBucket } from "./types.ts";
-import { eventStats, timeline, cardEvents, matchIntensity, lineup, substitutionEvents, varIncidents, type SubstitutionItem, type VarIncident } from "./sportsdb.ts";
+import { eventStats, timeline, cardEvents, matchIntensity, lineup, substitutionEvents, varIncidents, matchIncidents, type SubstitutionItem, type VarIncident, type MatchIncident } from "./sportsdb.ts";
 import { flag } from "./format.ts";
 import { sendMessage, sendPhoto } from "./telegram.ts";
 import { matchIntensityChartUrl } from "./charts.ts";
@@ -50,18 +50,20 @@ export interface MatchDigest {
   cards: CardEvent[];
   substitutions: SubstitutionItem[];
   varIncidents: VarIncident[];
+  incidents: MatchIncident[];
   intensity: IntensityBucket[];
   homeLineup: string[];
   awayLineup: string[];
 }
 
 export async function buildMatchDigest(e: WcEvent): Promise<MatchDigest> {
-  const [stats, goals, cards, substitutions, varReviews, intensity, players] = await Promise.all([
+  const [stats, goals, cards, substitutions, varReviews, incidents, intensity, players] = await Promise.all([
     eventStats(e.idEvent),
     timeline(e.idEvent),
     cardEvents(e.idEvent),
     substitutionEvents(e.idEvent),
     varIncidents(e.idEvent),
+    matchIncidents(e.idEvent),
     matchIntensity(e.idEvent),
     lineup(e.idEvent),
   ]);
@@ -73,6 +75,7 @@ export async function buildMatchDigest(e: WcEvent): Promise<MatchDigest> {
     cards,
     substitutions,
     varIncidents: varReviews,
+    incidents,
     intensity,
     homeLineup: starters.filter((p) => p.strHome === "Yes").map((p) => p.strPlayer),
     awayLineup: starters.filter((p) => p.strHome === "No").map((p) => p.strPlayer),
@@ -111,10 +114,15 @@ export function digestPrompt(d: MatchDigest): string {
       ? d.varIncidents.map((v) => `- ${v.minute}' ${v.team ?? "?"}: ${v.comment ?? "Revisão do VAR"}`)
       : ["- nenhuma revisão de VAR registrada"]),
     ``,
+    `Incidentes decisivos sem gol:`,
+    ...(d.incidents.length
+      ? d.incidents.map((i) => `- ${i.minute}' ${i.team ?? "?"}: ${i.detail}`)
+      : ["- nenhum incidente decisivo sem gol registrado"]),
+    ``,
     `Intensidade por período (eventos ponderáveis de timeline: finalizações, escanteios, faltas, cartões e gols; casa / fora):`,
     ...d.intensity.map((b) => `- ${b.label}: ${b.home} / ${b.away}`),
     ``,
-    `Obrigatório na resposta: use todas as estatísticas oficiais e derivadas listadas acima, todos os gols/cartões/substituições/VAR listados acima, diga se o placar foi justo, se houve azar/ineficiência e quem merecia ganhar.`,
+    `Obrigatório na resposta: use todas as estatísticas oficiais e derivadas listadas acima, todos os gols/cartões/substituições/VAR/incidentes sem gol listados acima, diga se o placar foi justo, se houve azar/ineficiência e quem merecia ganhar.`,
   ];
   if (d.homeLineup.length) lines.push(``, `Titulares ${e.strHomeTeam}: ${d.homeLineup.join(", ")}`);
   if (d.awayLineup.length) lines.push(``, `Titulares ${e.strAwayTeam}: ${d.awayLineup.join(", ")}`);
@@ -123,7 +131,7 @@ export function digestPrompt(d: MatchDigest): string {
 
 const SYSTEM_PROMPT = [
   "Você é um analista técnico de futebol imparcial, escrevendo em português do Brasil.",
-  "Baseie-se estritamente nos dados oficiais fornecidos (placar, estatísticas, gols, cartões, substituições, VAR, intensidade por período e titulares).",
+  "Baseie-se estritamente nos dados oficiais fornecidos (placar, estatísticas, gols, cartões, substituições, VAR, incidentes sem gol, intensidade por período e titulares).",
   "Não invente jogadores, eventos ou estatísticas que não estejam nos dados.",
   "Nos campos de jogador, use somente jogadores citados nos gols, cartões, substituições ou titulares.",
   "No campo time de cada jogador, escreva exatamente o nome do time da partida, nunca siglas, minutos, períodos ou posições.",
@@ -176,6 +184,7 @@ function playerTeams(d: MatchDigest): Map<string, { player: string; team: string
     add(s.playerIn, s.team);
     add(s.playerOut, s.team);
   });
+  d.incidents.forEach((i) => add(i.player, i.team));
   d.homeLineup.forEach((p) => add(p, d.event.strHomeTeam));
   d.awayLineup.forEach((p) => add(p, d.event.strAwayTeam));
   return out;
@@ -205,10 +214,11 @@ function fallbackNote(d: MatchDigest): PlayerNoteValue {
 
 function concreteKeyEvents(d: MatchDigest): string[] {
   const goals = d.goals.map((g) => `${g.intTime}' ${g.strPlayer ?? "?"} (${g.strTeam ?? "?"}) marcou${g.strTimelineDetail ? ` — ${g.strTimelineDetail}` : ""}.`);
+  const incidents = d.incidents.map((i) => `${i.minute}' ${i.team ?? "?"}: ${i.detail}`);
   const reds = d.cards.filter((c) => c.cardType === "red").map((c) => `${c.intTime}' ${c.strPlayer ?? "?"} (${c.strTeam ?? "?"}) foi expulso.`);
   const varRows = d.varIncidents.map((v) => `${v.minute}' VAR (${v.team ?? "?"}) — ${v.comment ?? "Revisão do VAR"}.`);
   const lateCards = d.cards.filter((c) => c.cardType !== "red").slice(-2).map((c) => `${c.intTime}' ${c.strPlayer ?? "?"} (${c.strTeam ?? "?"}) recebeu amarelo.`);
-  return [...goals, ...varRows, ...reds, ...lateCards].slice(0, 8);
+  return [...goals, ...incidents, ...varRows, ...reds, ...lateCards].slice(0, 8);
 }
 
 function sanitizeTeam(value: string, d: MatchDigest): string {
@@ -221,6 +231,10 @@ function teamFromText(text: string, d: MatchDigest): string | null {
   if (haystack.includes(d.event.strHomeTeam.toLowerCase())) return d.event.strHomeTeam;
   if (haystack.includes(d.event.strAwayTeam.toLowerCase())) return d.event.strAwayTeam;
   return null;
+}
+
+function teamFromMissedPenalty(d: MatchDigest): string | null {
+  return d.incidents.find((i) => /defendid|perdid|desperdi/i.test(i.detail))?.team ?? null;
 }
 
 function isPositiveHighlight(note: PlayerNoteValue): boolean {
@@ -237,7 +251,7 @@ function sanitizeAnalysis(d: MatchDigest, a: MatchAnalysis): MatchAnalysis {
     ...a,
     acontecimentosChave: concreteKeyEvents(d),
     leituraEstatistica: a.leituraEstatistica.slice(0, 8),
-    azar: { ...a.azar, time: azarTime === "Nenhum" ? teamFromText(a.azar.motivo, d) ?? azarTime : azarTime },
+    azar: { ...a.azar, time: azarTime === "Nenhum" ? teamFromText(a.azar.motivo, d) ?? teamFromMissedPenalty(d) ?? azarTime : azarTime },
     melhorEmCampo: sanitizePlayerNote(a.melhorEmCampo, known) ?? fallback,
     destaques: highlights.length ? highlights : [fallback],
     maisErros: (errors.length ? errors : d.cards.slice(0, 2).map((c) => ({
@@ -264,8 +278,9 @@ function fmtOfficialEvents(d: MatchDigest): string[] {
     ...d.cards.map((c) => `• ${c.intTime}' ${flag(c.strTeam ?? "")} ${c.strPlayer ?? "?"} (${c.strTeam ?? "?"}) — ${c.cardType === "red" ? "vermelho" : "amarelo"}`),
     ...d.substitutions.map((s) => `• ${s.minute}' ${flag(s.team ?? "")} ${s.playerIn ?? "?"} entrou, ${s.playerOut ?? "?"} saiu (${s.team ?? "?"})`),
     ...d.varIncidents.map((v) => `• ${v.minute}' ${flag(v.team ?? "")} VAR (${v.team ?? "?"}) — ${v.comment ?? "Revisão do VAR"}`),
+    ...d.incidents.map((i) => `• ${i.minute}' ${flag(i.team ?? "")} ${i.detail}`),
   ];
-  return lines.length ? lines : ["• nenhum gol, cartão, substituição ou VAR registrado"];
+  return lines.length ? lines : ["• nenhum gol, cartão, substituição, VAR ou incidente sem gol registrado"];
 }
 
 function fmtIntensity(d: MatchDigest): string[] {

@@ -22,6 +22,7 @@ const digest: MatchDigest = {
   cards: [{ intTime: "67", strPlayer: "Casemiro", strTeam: "Brazil", strHome: "yes", cardType: "yellow" }],
   substitutions: [{ minute: "70", team: "Argentina", playerIn: "Di Maria", playerOut: "De Paul" }],
   varIncidents: [{ minute: "79", team: "Argentina", comment: "Penalty confirmed" }],
+  incidents: [{ minute: "21", team: "Argentina", kind: "penalty", player: "Messi", detail: "Pênalti cobrado por Messi e defendido pelo goleiro adversário." }],
   intensity: [{ label: "76+", home: 1, away: 4 }],
   homeLineup: ["Alisson", "Vinicius Junior"],
   awayLineup: ["Messi"],
@@ -36,17 +37,19 @@ test("digestPrompt: includes score, stats, goals, cards and lineups in the promp
   expect(prompt).toContain("67' Casemiro (Brazil) — amarelo");
   expect(prompt).toContain("70' Di Maria entrou, De Paul saiu (Argentina)");
   expect(prompt).toContain("79' Argentina: Penalty confirmed");
+  expect(prompt).toContain("21' Argentina: Pênalti cobrado por Messi e defendido pelo goleiro adversário.");
   expect(prompt).toContain("76+: 1 / 4");
   expect(prompt).toContain("Titulares Brazil: Alisson, Vinicius Junior");
 });
 
 test("digestPrompt: reports no goals/cards when none happened", () => {
-  const empty: MatchDigest = { ...digest, goals: [], cards: [], substitutions: [], varIncidents: [] };
+  const empty: MatchDigest = { ...digest, goals: [], cards: [], substitutions: [], varIncidents: [], incidents: [] };
   const prompt = digestPrompt(empty);
   expect(prompt).toContain("nenhum gol registrado");
   expect(prompt).toContain("nenhum cartão registrado");
   expect(prompt).toContain("nenhuma substituição registrada");
   expect(prompt).toContain("nenhuma revisão de VAR registrada");
+  expect(prompt).toContain("nenhum incidente decisivo sem gol registrado");
 });
 
 test("fmtAnalysis: renders the LLM analysis and the match's card list", () => {
@@ -81,6 +84,7 @@ test("fmtAnalysis: renders the LLM analysis and the match's card list", () => {
   expect(out).toContain("67' 🇧🇷 Casemiro (Brazil) — amarelo");
   expect(out).toContain("70' 🇦🇷 Di Maria entrou, De Paul saiu (Argentina)");
   expect(out).toContain("79' 🇦🇷 VAR (Argentina) — Penalty confirmed");
+  expect(out).toContain("21' 🇦🇷 Pênalti cobrado por Messi e defendido pelo goleiro adversário.");
   expect(out).toContain("Intensidade por período");
   expect(out).toContain("76+: 1 x 4");
   expect(out).toContain("Placar justo?");

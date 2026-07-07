@@ -415,6 +415,14 @@ export interface VarIncident {
   comment: string | null;
 }
 
+export interface MatchIncident {
+  minute: string;
+  team: string | null;
+  kind: "penalty";
+  player: string | null;
+  detail: string;
+}
+
 /** VAR review incidents for a single match, from the official FIFA timeline (Type 71). */
 export async function varIncidents(idEvent: string): Promise<VarIncident[]> {
   const event = await eventDetail(idEvent);
@@ -427,6 +435,40 @@ export async function varIncidents(idEvent: string): Promise<VarIncident[]> {
       team: item.IdTeam === event.idHomeTeam ? event.strHomeTeam : item.IdTeam === event.idAwayTeam ? event.strAwayTeam : null,
       comment: text(item.EventDescription) || null,
     }));
+}
+
+/** Important non-goal incidents that FIFA exposes as multiple low-level timeline
+ *  events. Example: a missed/saved penalty is Penalty Awarded + Attempt at Goal
+ *  + Goal Prevention at the same minute. */
+export async function matchIncidents(idEvent: string): Promise<MatchIncident[]> {
+  const event = await eventDetail(idEvent);
+  if (!event) return [];
+  const items = await fifaTimeline(idEvent);
+  return items
+    .filter((item) => (item.Type ?? -1) === 6 || /^Penalty Awarded$/i.test(text(item.TypeLocalized)))
+    .map((item) => {
+      const minute = item.MatchMinute?.replace("'", "") ?? "";
+      const team = item.IdTeam === event.idHomeTeam ? event.strHomeTeam : item.IdTeam === event.idAwayTeam ? event.strAwayTeam : null;
+      const attempt = items.find((x) =>
+        (x.Type ?? -1) === 12
+        && x.IdTeam === item.IdTeam
+        && x.MatchMinute === item.MatchMinute
+        && /attempts an effort on goal/i.test(text(x.EventDescription)));
+      const save = items.find((x) =>
+        (x.Type ?? -1) === 57
+        && x.IdTeam !== item.IdTeam
+        && x.MatchMinute === item.MatchMinute);
+      const player = attempt ? playerFromDescription(text(attempt.EventDescription)) : null;
+      return {
+        minute,
+        team,
+        kind: "penalty" as const,
+        player,
+        detail: save
+          ? `Pênalti cobrado por ${player ?? "jogador não identificado"} e defendido pelo goleiro adversário.`
+          : `Pênalti concedido${player ? `; cobrança de ${player}` : ""}.`,
+      };
+    });
 }
 
 export async function fifaEndpointHealth(): Promise<FifaEndpointHealth[]> {
