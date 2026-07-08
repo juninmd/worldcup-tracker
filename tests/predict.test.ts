@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { trainRatings, expectancy, outcomeOf } from "../src/elo.ts";
-import { calibrateGoals, predictMatch, scoreMatrix } from "../src/predict.ts";
+import { calibrateGoals, expectedGoalsFromMatrix, predictMatch, scoreMatrix } from "../src/predict.ts";
 import { championForecast } from "../src/champion.ts";
 import type { WcEvent } from "../src/types.ts";
 
@@ -69,6 +69,9 @@ test("scoreMatrix: normalized and consistent with predictMatch", () => {
   let pHome = 0;
   for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) if (i > j) pHome += m[i]![j]!;
   expect(pHome).toBeCloseTo(p.pHome, 2);
+  const xg = expectedGoalsFromMatrix(m);
+  expect(xg.home).toBeGreaterThan(0);
+  expect(xg.away).toBeGreaterThan(0);
 });
 
 test("calibrateGoals: blends prior with observed totals", () => {

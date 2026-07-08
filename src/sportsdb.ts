@@ -99,6 +99,8 @@ type FifaTimelineEvent = {
   IdPlayer?: string;
   MatchMinute?: string | null;
   Type?: number | null;
+  PositionX?: number | null;
+  PositionY?: number | null;
   TypeLocalized?: Localized[];
   EventDescription?: Localized[];
 };
@@ -423,6 +425,19 @@ export interface MatchIncident {
   detail: string;
 }
 
+export interface ShotEvent {
+  minute: string;
+  team: string | null;
+  player: string | null;
+  x: number | null;
+  y: number | null;
+  outcome: "goal" | "saved" | "attempt";
+  zone: "penalty" | "small_area" | "box" | "outside_box" | "unknown";
+  xg: number;
+  clearChance: boolean;
+  detail: string;
+}
+
 /** VAR review incidents for a single match, from the official FIFA timeline (Type 71). */
 export async function varIncidents(idEvent: string): Promise<VarIncident[]> {
   const event = await eventDetail(idEvent);
@@ -467,6 +482,79 @@ export async function matchIncidents(idEvent: string): Promise<MatchIncident[]> 
         detail: save
           ? `Pênalti cobrado por ${player ?? "jogador não identificado"} e defendido pelo goleiro adversário.`
           : `Pênalti concedido${player ? `; cobrança de ${player}` : ""}.`,
+      };
+    });
+}
+
+function shotZone(item: FifaTimelineEvent, event: WcEvent, penalty: boolean): ShotEvent["zone"] {
+  if (penalty) return "penalty";
+  if (item.PositionX === undefined || item.PositionX === null || item.PositionY === undefined || item.PositionY === null) return "unknown";
+  const targetX = item.IdTeam === event.idHomeTeam ? 100 : 0;
+  const distanceToLine = Math.abs(targetX - item.PositionX);
+  const centrality = Math.abs(50 - item.PositionY);
+  if (distanceToLine <= 6 && centrality <= 18) return "small_area";
+  if (distanceToLine <= 17 && centrality <= 28) return "box";
+  return "outside_box";
+}
+
+function shotXg(zone: ShotEvent["zone"], outcome: ShotEvent["outcome"]): number {
+  const base = zone === "penalty" ? 0.76
+    : zone === "small_area" ? 0.38
+    : zone === "box" ? 0.16
+    : zone === "outside_box" ? 0.04
+    : 0.06;
+  const adjusted = outcome === "saved" && zone !== "penalty" ? base + 0.04 : base;
+  return Math.round(adjusted * 100) / 100;
+}
+
+function hasPenaltyAt(items: FifaTimelineEvent[], item: FifaTimelineEvent): boolean {
+  return items.some((x) =>
+    (x.Type ?? -1) === 6
+    && x.IdTeam === item.IdTeam
+    && x.MatchMinute === item.MatchMinute);
+}
+
+function shotOutcome(items: FifaTimelineEvent[], item: FifaTimelineEvent): ShotEvent["outcome"] {
+  const goal = items.some((x) =>
+    [0, 34, 41].includes(x.Type ?? -1)
+    && x.IdTeam === item.IdTeam
+    && x.MatchMinute === item.MatchMinute
+    && (x.IdPlayer === item.IdPlayer || playerFromDescription(text(x.EventDescription)) === playerFromDescription(text(item.EventDescription))));
+  if (goal) return "goal";
+  const save = items.some((x) =>
+    (x.Type ?? -1) === 57
+    && x.IdTeam !== item.IdTeam
+    && x.MatchMinute === item.MatchMinute);
+  return save ? "saved" : "attempt";
+}
+
+/** Attempts on goal with coarse location-derived xG. FIFA's free feed has shot
+ *  coordinates, but no defender tracking; "clearChance" is therefore inferred. */
+export async function shotEvents(idEvent: string): Promise<ShotEvent[]> {
+  const event = await eventDetail(idEvent);
+  if (!event) return [];
+  const items = await fifaTimeline(idEvent);
+  return items
+    .filter((item) => (item.Type ?? -1) === 12)
+    .map((item) => {
+      const penalty = hasPenaltyAt(items, item);
+      const outcome = shotOutcome(items, item);
+      const zone = shotZone(item, event, penalty);
+      const xg = shotXg(zone, outcome);
+      const player = playerFromDescription(text(item.EventDescription));
+      const team = item.IdTeam === event.idHomeTeam ? event.strHomeTeam : item.IdTeam === event.idAwayTeam ? event.strAwayTeam : null;
+      const clearChance = penalty || zone === "small_area" || (zone === "box" && outcome === "saved");
+      return {
+        minute: item.MatchMinute?.replace("'", "") ?? "",
+        team,
+        player,
+        x: item.PositionX ?? null,
+        y: item.PositionY ?? null,
+        outcome,
+        zone,
+        xg,
+        clearChance,
+        detail: `${player ?? "Jogador não identificado"} (${team ?? "?"}) finalizou ${zone === "penalty" ? "de pênalti" : zone === "small_area" ? "na pequena área" : zone === "box" ? "dentro da área" : "de fora/posição distante"}; resultado: ${outcome === "goal" ? "gol" : outcome === "saved" ? "defesa do goleiro" : "sem gol"}.`,
       };
     });
 }
@@ -810,6 +898,24 @@ export async function eventStats(idEvent?: string): Promise<EventStat[]> {
       intAway: String(count(event.idAwayTeam, /Goal Prevention/i)),
     },
   ];
+}
+
+export async function possessionStat(idEvent: string): Promise<EventStat | null> {
+  const live = asRecord(await fifaLiveMatch(idEvent));
+  const possession = asRecord(live?.BallPossession);
+  if (!possession) return null;
+  const home = asString(possession.Home)
+    ?? asString(possession.HomeTeam)
+    ?? asString(possession.HomeTeamPossession)
+    ?? asString(possession.HomePossession)
+    ?? asString(possession.TeamA);
+  const away = asString(possession.Away)
+    ?? asString(possession.AwayTeam)
+    ?? asString(possession.AwayTeamPossession)
+    ?? asString(possession.AwayPossession)
+    ?? asString(possession.TeamB);
+  if (!home || !away) return null;
+  return { strStat: "Ball Possession", intHome: home, intAway: away };
 }
 
 type FifaPlayerCareer = {

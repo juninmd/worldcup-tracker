@@ -20,10 +20,12 @@ camisa e resumo do jogador**, e comparação **expectativa × realidade** no fim
 - 🟨 **Cartões** — ranking de cartões amarelos/vermelhos da edição, por jogador.
 - 🧠 **Análise da partida com IA** — o LiteLLM do cluster lê os dados oficiais (placar, estatísticas,
   gols, cartões, substituições, VAR, intensidade por período e titulares), lista todas as estatísticas e acontecimentos,
-  avalia se o placar foi justo, se houve azar/ineficiência, quem merecia vencer,
+  adiciona chances claras inferidas por posição do chute, xG estimado (pré-jogo/modelo,
+  timeline de chutes e IA pós-jogo), avalia se o placar foi justo, se houve azar/ineficiência, quem merecia vencer,
   melhor em campo, destaques e quem mais errou, em português. Inclui mapa de calor
   de intensidade do jogo por período (finalizações/escanteios/faltas/cartões/gols
-  ao longo dos minutos — a FIFA não expõe posicionamento em campo no feed gratuito).
+  ao longo dos minutos — a FIFA não expõe tracking de defensores no feed gratuito).
+  Posse de bola e passes certos/errados só aparecem quando o feed FIFA usado pelo app expõe esses campos; quando ausentes, a análise marca explicitamente como indisponível.
 - 🧠 **Treinamento** — ratings Elo partem de uma base e são ajustados após cada resultado real
   (peso por saldo de gols), refinando previsões conforme a Copa avança.
 - 🧩 **Fallback oficial de grupos** — quando o feed gratuito vem parcial, a simulação usa os 12 grupos oficiais da Copa 2026 e substitui os jogos por resultados reais assim que aparecem.

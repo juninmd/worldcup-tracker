@@ -23,6 +23,14 @@ const digest: MatchDigest = {
   substitutions: [{ minute: "70", team: "Argentina", playerIn: "Di Maria", playerOut: "De Paul" }],
   varIncidents: [{ minute: "79", team: "Argentina", comment: "Penalty confirmed" }],
   incidents: [{ minute: "21", team: "Argentina", kind: "penalty", player: "Messi", detail: "Pênalti cobrado por Messi e defendido pelo goleiro adversário." }],
+  shots: [
+    { minute: "21", team: "Argentina", player: "Messi", x: 89, y: 50, outcome: "saved", zone: "penalty", xg: 0.76, clearChance: true, detail: "Messi (Argentina) finalizou de pênalti; resultado: defesa do goleiro." },
+  ],
+  clearChances: [
+    { minute: "21", team: "Argentina", player: "Messi", x: 89, y: 50, outcome: "saved", zone: "penalty", xg: 0.76, clearChance: true, detail: "Messi (Argentina) finalizou de pênalti; resultado: defesa do goleiro." },
+  ],
+  xg: { modelHome: 1.5, modelAway: 1.1, timelineHome: 1.8, timelineAway: 0.9, realHome: 2, realAway: 1 },
+  unavailableStats: ["Posse de bola: indisponível/nullable no feed FIFA live para este jogo", "Passes certos/errados: não expostos no feed FIFA usado pelo app"],
   intensity: [{ label: "76+", home: 1, away: 4 }],
   homeLineup: ["Alisson", "Vinicius Junior"],
   awayLineup: ["Messi"],
@@ -32,6 +40,10 @@ test("digestPrompt: includes score, stats, goals, cards and lineups in the promp
   const prompt = digestPrompt(digest);
   expect(prompt).toContain("Brazil 2 x 1 Argentina");
   expect(prompt).toContain("Shots on Goal: 6 / 3");
+  expect(prompt).toContain("Passes certos/errados: não expostos");
+  expect(prompt).toContain("Expectativa pré-jogo do modelo: 1.5 / 1.1");
+  expect(prompt).toContain("xG estimado pela timeline de chutes: 1.8 / 0.9");
+  expect(prompt).toContain("21' Messi (Argentina): Messi (Argentina) finalizou de pênalti");
   expect(prompt).toContain("23' Vinicius Junior (Brazil)");
   expect(prompt).toContain("80' Messi (Argentina) [Penalty]");
   expect(prompt).toContain("67' Casemiro (Brazil) — amarelo");
@@ -67,6 +79,7 @@ test("fmtAnalysis: renders the LLM analysis and the match's card list", () => {
     ],
     placarJusto: { veredito: "justo", motivo: "O Brasil teve mais finalizações no alvo e venceu pela margem mínima." },
     azar: { time: "Argentina", motivo: "Teve menos volume no alvo e precisou de pênalti para marcar." },
+    golsEsperadosIA: { casa: 1.9, fora: 1.0, motivo: "O volume de chutes favoreceu o Brasil." },
     melhorEmCampo: { jogador: "Vinicius Junior", time: "Brazil", motivo: "Decidiu o jogo com um gol." },
     destaques: [{ jogador: "Alisson", time: "Brazil", motivo: "Defesas decisivas." }],
     mereciaGanhar: { time: "Brazil", motivo: "Criou mais chances claras." },
@@ -78,6 +91,12 @@ test("fmtAnalysis: renders the LLM analysis and the match's card list", () => {
   expect(out).toContain("Brazil 2 x 1 Argentina");
   expect(out).toContain("Todas as estatísticas oficiais");
   expect(out).toContain("Shots on Goal: 6 x 3");
+  expect(out).toContain("Gols esperados");
+  expect(out).toContain("Expectativa pré-jogo/modelo: 1.5 x 1.1");
+  expect(out).toContain("Timeline de chutes estimada: 1.8 x 0.9");
+  expect(out).toContain("IA pós-jogo: 1.9 x 1");
+  expect(out).toContain("Gols perdidos / chances claras");
+  expect(out).toContain("Messi (Argentina) finalizou de pênalti");
   expect(out).toContain("Acontecimentos oficiais");
   expect(out).toContain("23' 🇧🇷 Vinicius Junior (Brazil)");
   expect(out).toContain("80' 🇦🇷 Messi (Argentina) — Penalty");
