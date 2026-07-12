@@ -21,7 +21,7 @@ const digest: MatchDigest = {
   ],
   cards: [{ intTime: "67", strPlayer: "Casemiro", strTeam: "Brazil", strHome: "yes", cardType: "yellow" }],
   substitutions: [{ minute: "70", team: "Argentina", playerIn: "Di Maria", playerOut: "De Paul" }],
-  varIncidents: [{ minute: "79", team: "Argentina", comment: "Penalty confirmed" }],
+  varIncidents: [{ minute: "79", team: "Argentina", comment: "Penalty confirmed", outcome: null }],
   incidents: [{ minute: "21", team: "Argentina", kind: "penalty", player: "Messi", detail: "Pênalti cobrado por Messi e defendido pelo goleiro adversário." }],
   shots: [
     { minute: "21", team: "Argentina", player: "Messi", x: 89, y: 50, outcome: "saved", zone: "penalty", xg: 0.76, clearChance: true, detail: "Messi (Argentina) finalizou de pênalti; resultado: defesa do goleiro." },

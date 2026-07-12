@@ -415,6 +415,10 @@ export interface VarIncident {
   minute: string;
   team: string | null;
   comment: string | null;
+  /** What the review resolved into (e.g. "Cartão vermelho — Breel Embolo"), resolved
+   *  from the nearest card/goal event in the timeline — FIFA's VAR entry (Type 71)
+   *  often omits IdTeam and never states the outcome itself. */
+  outcome: string | null;
 }
 
 export interface MatchIncident {
@@ -439,17 +443,38 @@ export interface ShotEvent {
 }
 
 /** VAR review incidents for a single match, from the official FIFA timeline (Type 71). */
+const VAR_RESOLVED_KIND = /red card|yellow card|^(own goal|penalty goal|goal!?)$/i;
+
 export async function varIncidents(idEvent: string): Promise<VarIncident[]> {
   const event = await eventDetail(idEvent);
   if (!event) return [];
   const items = await fifaTimeline(idEvent);
   return items
     .filter((item) => (item.Type ?? -1) === 71)
-    .map((item) => ({
-      minute: item.MatchMinute?.replace("'", "") ?? "",
-      team: item.IdTeam === event.idHomeTeam ? event.strHomeTeam : item.IdTeam === event.idAwayTeam ? event.strAwayTeam : null,
-      comment: text(item.EventDescription) || null,
-    }));
+    .map((item) => {
+      const minute = Number(item.MatchMinute?.replace("'", ""));
+      // The review's minute rarely lines up exactly with the card/goal it produced
+      // (a few minutes of on-pitch review time) — take the closest resolved event.
+      let related: FifaTimelineEvent | null = null;
+      let bestDist = Infinity;
+      for (const cand of items) {
+        if (cand === item || !VAR_RESOLVED_KIND.test(text(cand.TypeLocalized))) continue;
+        const candMinute = Number(cand.MatchMinute?.replace("'", ""));
+        const dist = Math.abs(candMinute - minute);
+        if (!Number.isNaN(dist) && dist <= 3 && dist < bestDist) { bestDist = dist; related = cand; }
+      }
+      const teamId = item.IdTeam ?? related?.IdTeam;
+      const team = teamId === event.idHomeTeam ? event.strHomeTeam : teamId === event.idAwayTeam ? event.strAwayTeam : null;
+      const outcome = related
+        ? `${text(related.TypeLocalized)}${playerFromDescription(text(related.EventDescription)) ? ` — ${playerFromDescription(text(related.EventDescription))}` : ""}`
+        : null;
+      return {
+        minute: item.MatchMinute?.replace("'", "") ?? "",
+        team,
+        comment: text(item.EventDescription) || null,
+        outcome,
+      };
+    });
 }
 
 /** Important non-goal incidents that FIFA exposes as multiple low-level timeline

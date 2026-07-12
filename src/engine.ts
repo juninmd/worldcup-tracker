@@ -291,7 +291,10 @@ async function catchUpMatchEvents(e: WcEvent, state: Awaited<ReturnType<typeof l
   for (const v of vr) {
     const key = `${e.idEvent}:${v.minute}`;
     if (state.postedVar.includes(key)) continue;
-    await sendMessage(`🖥 *VAR* — ${e.strHomeTeam} x ${e.strAwayTeam}\n${v.minute}' ${v.comment ?? "Revisão do VAR"}`);
+    const teamLabel = v.team ? `${flag(v.team)} ${v.team}` : `${e.strHomeTeam} x ${e.strAwayTeam}`;
+    const lines = [`🖥 *VAR* — ${teamLabel}`, `${v.minute}' ${v.comment ?? "Revisão do VAR"}`];
+    if (v.outcome) lines.push(`➡️ ${v.outcome}`);
+    await sendMessage(lines.join("\n"));
     state.postedVar.push(key);
     await saveState(state);
   }
@@ -374,11 +377,12 @@ export async function pollOnce(): Promise<number> {
 }
 
 export async function trackForever(): Promise<void> {
-  console.log(`Tracking WC live every ${config.pollIntervalSec}s…`);
+  console.log(`Tracking WC: idle every ${config.pollIntervalSec}s, live every ${config.livePollIntervalSec}s…`);
   let prevLive = -1;
   for (;;) {
+    let live = 0;
     try {
-      const live = await pollOnce();
+      live = await pollOnce();
       // Log only when the live-match count changes — a per-tick heartbeat floods
       // ~5.8k lines/day and buries real errors. The heartbeat file below already
       // proves liveness for the k8s probe.
@@ -392,7 +396,10 @@ export async function trackForever(): Promise<void> {
     // Liveness heartbeat: a healthy loop refreshes this file every pass; the
     // k8s livenessProbe restarts the pod if it goes stale (hung fetch/deadlock).
     await writeFile(HEARTBEAT, new Date().toISOString()).catch(() => {});
-    await Bun.sleep(config.pollIntervalSec * 1000);
+    // Adaptive cadence: poll faster while a match is live (fresher goals/cards/VAR),
+    // slower while idle — this keeps total FIFA request volume in check instead of
+    // polling at the fast rate around the clock.
+    await Bun.sleep((live > 0 ? config.livePollIntervalSec : config.pollIntervalSec) * 1000);
   }
 }
 
