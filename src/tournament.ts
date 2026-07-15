@@ -1,5 +1,5 @@
 import type { Prediction, WcEvent } from "./types.ts";
-import { canonicalTeam, rating, teamStrength } from "./elo.ts";
+import { canonicalTeam, FIFA_RANK_AS_OF, MODEL_VERSION, rating, teamStrength } from "./elo.ts";
 import { trainRatings } from "./elo.ts";
 import { flag } from "./format.ts";
 import { calibrateGoals, predictMatch } from "./predict.ts";
@@ -26,6 +26,7 @@ export interface ProjectedMatch {
 
 export interface TournamentProjection {
   generatedAt: string;
+  bracketSource?: "fifa" | "heuristic-fallback";
   groups: Map<string, ProjectedTeam[]>;
   qualifiers: ProjectedTeam[];
   knockout: ProjectedMatch[][];
@@ -74,9 +75,8 @@ export const WORLD_CUP_GROUPS: Record<string, string[]> = {
   L: ["England", "Croatia", "Ghana", "Panama"],
 };
 
-// Official 2026 R32 bracket: adjacent groups cross-pair.
-// 1st of group A faces 2nd of group B (and vice versa) in the same bracket section.
-// Brazil (Group C) faces a team from Group D in R32.
+// Emergency heuristic only when FIFA publishes no knockout fixtures. The real
+// 2026 allocation of best thirds has 495 combinations and must come from FIFA.
 export const GROUP_BRACKET_PAIRS: [string, string][] = [
   ["A", "B"], ["C", "D"], ["E", "F"],
   ["G", "H"], ["I", "J"], ["K", "L"],
@@ -204,14 +204,24 @@ function isKnockoutEvent(e: WcEvent): boolean {
   return /final|round of|quarter|semi|16|32/i.test(`${e.strStage ?? ""} ${e.strEvent}`);
 }
 
-function roundName(e: WcEvent): string {
+export function knockoutRoundName(e: WcEvent): string | null {
   const stage = e.strStage ?? "";
+  const text = `${stage} ${e.strEvent} ${e.strPlaceHolderA ?? ""} ${e.strPlaceHolderB ?? ""}`;
+  const number = matchNo(e);
+  if (number === 103 || /third[ -]?place|bronze|RU10[12]/i.test(text)) return null;
+  if (number === 101 || number === 102) return "Semifinal";
+  if (number === 104) return "Final";
   if (/round of 32/i.test(stage)) return "Rodada de 32";
   if (/round of 16/i.test(stage)) return "Oitavas";
   if (/quarter/i.test(stage)) return "Quartas";
   if (/semi/i.test(stage)) return "Semifinal";
-  if (/final/i.test(stage) && !/third/i.test(stage)) return "Final";
+  if (/final/i.test(stage)) return "Final";
   return stage || e.strEvent;
+}
+
+export function selectTournamentChampion(rounds: ProjectedMatch[][], fallback: string): string {
+  const finals = rounds.flat().filter((match) => match.round === "Final");
+  return finals.length === 1 ? finals[0]!.winner : fallback;
 }
 
 function resolveRankedPlaceholder(
@@ -246,7 +256,7 @@ function buildFifaBracket(
 ): ProjectedMatch[][] | null {
   const knockoutEvents = events
     .filter(isKnockoutEvent)
-    .filter((e) => !/third place/i.test(e.strStage ?? ""))
+    .filter((e) => knockoutRoundName(e) !== null)
     .sort((a, b) => matchNo(a) - matchNo(b));
   if (!knockoutEvents.length) return null;
 
@@ -269,7 +279,7 @@ function buildFifaBracket(
   for (const e of knockoutEvents) {
     const home = resolve("home", e);
     const away = resolve("away", e);
-    const round = roundName(e);
+    const round = knockoutRoundName(e)!;
     const predicted = predictWithAbsences(table, home, away, history);
     const hs = Number(e.intHomeScore);
     const as = Number(e.intAwayScore);
@@ -287,8 +297,8 @@ function buildFifaBracket(
   return order.map((name) => byRound.get(name) ?? []).filter((round) => round.length);
 }
 
-// Fallback bracket used only before FIFA publishes knockout fixtures.
-function buildOfficialBracket(
+// Explicitly-labelled heuristic fallback; never presented as an official bracket.
+function buildHeuristicBracket(
   groups: Map<string, ProjectedTeam[]>,
   thirds: ProjectedTeam[],
   table: Record<string, number>,
@@ -395,10 +405,14 @@ export async function tournamentProjection(): Promise<TournamentProjection> {
     qualifiers = qualifiersFrom(groups, table);
   }
   const thirds = [...groups.values()].map((g) => g[2]).filter((x): x is ProjectedTeam => !!x);
-  const knockout = buildFifaBracket(all, groups, thirds, table, all) ?? buildOfficialBracket(groups, thirds, table, all);
-  const champion = knockout.at(-1)?.[0]?.winner ?? qualifiers[0]?.team ?? "indefinido";
+  const fifaBracket = buildFifaBracket(all, groups, thirds, table, all);
+  const knockout = fifaBracket ?? buildHeuristicBracket(groups, thirds, table, all);
+  const champion = selectTournamentChampion(knockout, qualifiers[0]?.team ?? "indefinido");
   const brazilPath = brazilPathInKnockout(knockout);
-  return { generatedAt: new Date().toISOString(), groups, qualifiers, knockout, champion, brazilPath };
+  return {
+    generatedAt: new Date().toISOString(), bracketSource: fifaBracket ? "fifa" : "heuristic-fallback",
+    groups, qualifiers, knockout, champion, brazilPath,
+  };
 }
 
 function fixtureKey(e: WcEvent): string {
@@ -465,7 +479,8 @@ function matchLine(m: ProjectedMatch, perspective?: string): string {
 export function fmtTournamentProjection(p: TournamentProjection): string {
   const lines: string[] = [
     `🔥 *CHAVE PROJETADA — Copa 2026*`,
-    `_Modelo: ranking FIFA/Elo · resultados reais · qualidade do elenco · H2H · desfalques_`,
+    `_Modelo interno ${MODEL_VERSION}: Elo treinado · ranking FIFA ${FIFA_RANK_AS_OF} · índice manual de elenco · resultados · desfalques_`,
+    `_Fonte do chaveamento: ${p.bracketSource === "heuristic-fallback" ? "fallback heurístico (não oficial)" : "FIFA"}_`,
     ``,
     `🏆 *Campeão previsto:* ${flag(p.champion)} *${p.champion}*`,
     ``,
@@ -473,7 +488,11 @@ export function fmtTournamentProjection(p: TournamentProjection): string {
 
   // ── Brazil's path ───────────────────────────────────────────────────────
   if (p.brazilPath.length) {
-    lines.push(`🇧🇷 *CAMINHO DO BRASIL — projeção completa*`);
+    const lastBrazilMatch = p.brazilPath.at(-1);
+    const eliminated = lastBrazilMatch?.real && canonicalTeam(lastBrazilMatch.winner) !== "Brazil";
+    lines.push(eliminated
+      ? `🇧🇷 *CAMPANHA DO BRASIL — encerrada nas ${lastBrazilMatch.round}*`
+      : `🇧🇷 *CAMINHO DO BRASIL — projeção completa*`);
     for (const m of p.brazilPath) {
       const isBrazilHome = canonicalTeam(m.home) === "Brazil";
       const pBrazil = isBrazilHome ? m.prediction.pHome : m.prediction.pAway;
@@ -495,10 +514,12 @@ export function fmtTournamentProjection(p: TournamentProjection): string {
   }
 
   // ── Group standings ──────────────────────────────────────────────────────
-  lines.push(`*Fase de grupos — classificados esperados*`);
+  const groupsComplete = p.groups.size > 0 && [...p.groups.values()].every((rows) => rows.length === 4 && rows.every((row) => row.played >= 3));
+  const qualified = new Set(p.qualifiers.map((row) => canonicalTeam(row.team)));
+  lines.push(`*Fase de grupos — ${groupsComplete ? "classificação final" : "classificação projetada"}*`);
   for (const [g, rows] of p.groups) {
     const top3 = rows.slice(0, 3).map((r, i) => {
-      const mark = i < 2 ? "🟢" : "🟡";
+      const mark = qualified.has(canonicalTeam(r.team)) ? "🟢" : groupsComplete ? "❌" : i < 2 ? "🟢" : "🟡";
       return `${mark}${i + 1}. ${flag(r.team)} ${r.team} ${r.points}pts`;
     }).join("  ·  ");
     lines.push(`*Grupo ${g}:* ${top3}`);

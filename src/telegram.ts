@@ -1,4 +1,5 @@
 import { config } from "./config.ts";
+import { recordOperationalEvent } from "./db.ts";
 
 const api = (m: string) =>
   `https://api.telegram.org/bot${config.telegramToken}/${m}`;
@@ -14,6 +15,7 @@ async function post(method: string, body: Record<string, unknown>): Promise<Resp
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function call(method: string, body: Record<string, unknown>): Promise<void> {
+  const started = Date.now();
   let res = await post(method, body);
   // Feed text can contain unbalanced Markdown (* _ [ ]) that Telegram rejects.
   // Retry once as plain text so the alert still lands instead of crashing the poll.
@@ -31,8 +33,10 @@ async function call(method: string, body: Record<string, unknown>): Promise<void
   }
   if (!res.ok) {
     const txt = await res.text();
+    recordOperationalEvent({ subsystem: "telegram", operation: method, outcome: "error", latencyMs: Date.now() - started });
     throw new Error(`Telegram ${method} ${res.status}: ${txt}`);
   }
+  recordOperationalEvent({ subsystem: "telegram", operation: method, outcome: "ok", latencyMs: Date.now() - started });
 }
 
 // Telegram hard-caps a text message at 4096 chars; a verbose LLM take can exceed

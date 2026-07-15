@@ -1,4 +1,4 @@
-import { cacheGet, cachePut } from "./db.ts";
+import { cacheGet, cachePut, recordOperationalEvent } from "./db.ts";
 import type { WcEvent, TimelineItem, Player, LineupPlayer, EventStat, TableRow, CardEvent, IntensityBucket } from "./types.ts";
 
 const FIFA_BASE = "https://api.fifa.com/api/v3";
@@ -18,27 +18,36 @@ function ttlFor(path: string): number {
 }
 
 async function getJson<T>(cachePath: string, url: string): Promise<T> {
+  const started = Date.now();
+  const observe = (outcome: "ok" | "cache" | "stale" | "error") =>
+    recordOperationalEvent({ subsystem: "fifa", operation: cachePath, outcome, latencyMs: Date.now() - started });
   const hit = cacheGet(cachePath);
-  if (hit && hit.age < ttlFor(cachePath)) return JSON.parse(hit.body) as T;
+  if (hit && hit.age < ttlFor(cachePath)) {
+    observe("cache");
+    return JSON.parse(hit.body) as T;
+  }
 
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
       res = await fetch(url, { headers: { "User-Agent": "worldcup-tracker/1.0" } });
     } catch (err) {
-      if (hit) return JSON.parse(hit.body) as T;
+      if (hit) { observe("stale"); return JSON.parse(hit.body) as T; }
+      observe("error");
       throw err;
     }
     if (res.ok) {
       const text = await res.text();
       cachePut(cachePath, text);
+      observe("ok");
       return JSON.parse(text) as T;
     }
     if ((res.status === 429 || res.status >= 500) && attempt < 3) {
       await sleep(1500 * (attempt + 1));
       continue;
     }
-    if (hit) return JSON.parse(hit.body) as T;
+    if (hit) { observe("stale"); return JSON.parse(hit.body) as T; }
+    observe("error");
     throw new Error(`FIFA ${res.status} on ${url}`);
   }
 }

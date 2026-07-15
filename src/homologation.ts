@@ -6,12 +6,18 @@ import { topScorers } from "./scorers.ts";
 import { existsSync } from "node:fs";
 import { fmtGoalCaption, flag } from "./format.ts";
 import type { LineupPlayer, TimelineItem, WcEvent } from "./types.ts";
+import { canonicalTeam, fifaRank, trainRatings } from "./elo.ts";
+import { simulateKnockout } from "./simulate.ts";
+import { buildLeakFreeBacktest, evaluatePredictions } from "./metrics.ts";
 
 export interface HomologationResult {
   groups: number;
   qualifiers: number;
   rounds: number[];
   champion: string;
+  bracketSource: "fifa" | "heuristic-fallback" | "unknown";
+  titleFinals: number;
+  modelMetrics: { matches: number; brier: number | null; logLoss: number | null; calibrationError: number | null };
   chartStatus: number;
   chartContentType: string;
   chartBytes: number;
@@ -105,8 +111,10 @@ async function checkImage(url: string, kind: "lineup" | "goal"): Promise<{ kind:
 
 export async function homologateTelegramDryRun(): Promise<TelegramDryRunResult> {
   const problems: string[] = [];
-  const live = (await mergedSeasonEvents()).filter(isLive);
-  const match = live[0] ?? null;
+  const events = await mergedSeasonEvents();
+  const live = events.filter(isLive);
+  const match = live[0] ?? events.filter(isFinished)
+    .sort((a, b) => (b.strTimestamp ?? b.dateEvent).localeCompare(a.strTimestamp ?? a.dateEvent))[0] ?? null;
   const players = match ? await lineup(match.idEvent) : [];
   const goals = match ? onlyGoals(await timeline(match.idEvent)).sort((a, b) => Number(a.intTime) - Number(b.intTime)) : [];
   const starters = players.filter((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes");
@@ -114,7 +122,7 @@ export async function homologateTelegramDryRun(): Promise<TelegramDryRunResult> 
   const text = match ? lineupText(match, players) : "";
   const mediaChecks = await Promise.all(photos.map((url) => checkImage(url, "lineup")));
 
-  if (!match) problems.push("no live match available for Telegram dry-run");
+  if (!match) problems.push("no live or finished match available for Telegram dry-run");
   if (match && starters.length !== 22) problems.push(`${match.strEvent} starters ${starters.length} != 22`);
   if (players.length === 0) problems.push("missing complete live lineup");
   if (photos.length !== players.length) problems.push(`lineup photos ${photos.length}/${players.length}`);
@@ -174,12 +182,32 @@ export async function homologateTelegramDryRun(): Promise<TelegramDryRunResult> 
 
 export async function homologateForecast(send = false): Promise<HomologationResult> {
   const projection = await tournamentProjection();
+  const events = await mergedSeasonEvents();
   const problems: string[] = [];
   const rounds = projection.knockout.map((r) => r.length);
+  const titleFinals = projection.knockout.flat().filter((match) => match.round === "Final").length;
+  const metrics = evaluatePredictions(buildLeakFreeBacktest(events));
 
   if (projection.groups.size !== 12) problems.push(`expected 12 groups, got ${projection.groups.size}`);
   if (projection.qualifiers.length !== 32) problems.push(`expected 32 qualifiers, got ${projection.qualifiers.length}`);
   if (rounds.join(",") !== "16,8,4,2,1") problems.push(`expected knockout 16,8,4,2,1, got ${rounds.join(",")}`);
+  if (projection.bracketSource !== "fifa") problems.push(`expected FIFA bracket, got ${projection.bracketSource ?? "unknown"}`);
+  if (titleFinals !== 1) problems.push(`expected exactly one title final, got ${titleFinals}`);
+  const titleFinal = projection.knockout.flat().find((match) => match.round === "Final");
+  if (titleFinal && ![titleFinal.home, titleFinal.away].includes(projection.champion)) {
+    problems.push(`champion ${projection.champion} is not in title final`);
+  }
+  const unresolved = projection.knockout.flat().filter((match) => /^(?:(?:W|RU)\d+|[123][A-L]+)$/.test(match.home) || /^(?:(?:W|RU)\d+|[123][A-L]+)$/.test(match.away));
+  if (unresolved.length) problems.push(`unresolved knockout placeholders: ${unresolved.length}`);
+  const brazilLast = projection.brazilPath.at(-1);
+  if (brazilLast?.real && canonicalTeam(brazilLast.winner) !== "Brazil") {
+    const simulation = simulateKnockout(projection, trainRatings(events.filter(isFinished)), events, 1000);
+    if ((simulation?.title.find((team) => team.team === "Brazil")?.prob ?? 0) !== 0) problems.push("eliminated Brazil has non-zero title probability");
+  }
+  if (fifaRank("Brazil") !== 6) problems.push(`Brazil FIFA rank expected 6, got ${fifaRank("Brazil")}`);
+  if (!metrics.matches || metrics.brier === null || metrics.logLoss === null || metrics.calibrationError === null) {
+    problems.push("model metrics are empty or non-finite");
+  }
   for (const [group, rows] of projection.groups) {
     if (rows.length !== 4) problems.push(`group ${group} has ${rows.length} teams`);
     for (const row of rows) {
@@ -205,6 +233,9 @@ export async function homologateForecast(send = false): Promise<HomologationResu
     qualifiers: projection.qualifiers.length,
     rounds,
     champion: projection.champion,
+    bracketSource: projection.bracketSource ?? "unknown",
+    titleFinals,
+    modelMetrics: { matches: metrics.matches, brier: metrics.brier, logLoss: metrics.logLoss, calibrationError: metrics.calibrationError },
     chartStatus,
     chartContentType,
     chartBytes,
@@ -242,7 +273,6 @@ export async function homologateFull(send = false): Promise<FullHomologationResu
   const finished = events.filter(isFinished);
   const live = events.filter(isLive);
   if (!finished.length) problems.push("no finished matches from FIFA");
-  if (!live.length) problems.push("no live matches from FIFA right now");
 
   const timelines = await Promise.all(finished.map(async (e) => ({ event: e, goals: await timeline(e.idEvent) })));
   const timelineGoals = timelines.reduce((sum, row) => sum + row.goals.length, 0);

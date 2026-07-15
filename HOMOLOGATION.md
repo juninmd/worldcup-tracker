@@ -12,12 +12,16 @@ bun run src/cli.ts homologate telegram-dry-run
 Contrato validado pelo `homologate full`:
 
 - Fonte unica de dados esportivos: FIFA API (`api.fifa.com/api/v3`).
+- Chave FIFA com exatamente `16,8,4,2,1` jogos por rodada; bronze (partida 103) nunca entra como final e a partida 104 é a única final.
+- Campeão precisa participar da final; placeholders `W*`/`RU*` não podem chegar ao forecast publicado.
+- Brasil usa ranking FIFA #6 (snapshot 11/06/2026); após eliminação, chance de título é zero e a saída vira campanha encerrada.
+- Métricas do modelo precisam ter amostra temporal, Brier, Log Loss e calibração finitos.
 - Copa 2026: `IdCompetition=17`, `IdSeason=285023`.
 - 104 jogos oficiais.
 - 48 selecoes oficiais.
 - 1.248 jogadores de elenco oficial.
 - Jogos finalizados com timeline de gols FIFA, incluindo gol normal, gol contra e penalti convertido.
-- Jogos ao vivo presentes no snapshot FIFA.
+- Jogos ao vivo presentes e validados quando houver partida em andamento; ausência fora da janela de partidas é estado válido.
 - Escalacao live via `/live/football/{IdMatch}`: 11 titulares por lado e foto para todos os jogadores publicados.
 - Gols live via timeline FIFA: cada gol validado precisa de jogador e foto antes de ser enviado ao Telegram.
 - Estatisticas de time derivadas da timeline FIFA.
@@ -38,28 +42,32 @@ Ultima evidencia local:
   "matches": 104,
   "teams": 48,
   "rosterPlayers": 1248,
-  "finishedMatches": 78,
-  "liveMatches": 1,
-  "timelineChecked": 78,
-  "timelineGoals": 241,
+  "finishedMatches": 101,
+  "liveMatches": 0,
+  "timelineChecked": 101,
+  "timelineGoals": 319,
   "endpoints": [
     { "name": "calendar", "ok": true, "count": 104 },
     { "name": "squads", "ok": true, "count": 1248 },
     { "name": "timeline", "ok": true },
-    { "name": "live", "ok": true }
+    { "name": "live", "ok": true, "count": 0 }
   ],
-  "liveMedia": {
-    "match": "Mexico vs Ecuador",
-    "lineupPlayers": 52,
-    "lineupPlayersWithPhoto": 52,
-    "starters": 22,
-    "goals": 2,
-    "goalsWithPlayerPhoto": 2
+  "forecast": {
+    "rounds": [16, 8, 4, 2, 1],
+    "champion": "Spain",
+    "bracketSource": "fifa",
+    "titleFinals": 1,
+    "modelMetrics": {
+      "matches": 101,
+      "brier": 0.4913,
+      "logLoss": 0.8444,
+      "calibrationError": 0.0803
+    }
   },
   "playerStats": {
-    "scorers": 157,
+    "scorers": 187,
     "leader": "Kylian Mbappe",
-    "leaderGoals": 6
+    "leaderGoals": 8
   },
   "problems": []
 }
@@ -69,7 +77,7 @@ Evidencia dry-run Telegram:
 
 ```json
 {
-  "match": "Mexico vs Ecuador",
+  "match": "France vs Spain",
   "lineup": {
     "players": 52,
     "playersWithPhoto": 52,
@@ -90,4 +98,4 @@ Evidencia dry-run Telegram:
 }
 ```
 
-Observacao operacional: build Docker local depende do daemon Docker ativo. Nesta maquina o CLI existe, mas o daemon nao estava rodando durante a homologacao local.
+Observacao operacional: build Docker local depende do daemon Docker ativo. Nesta maquina o CLI existe, mas o daemon nao estava rodando durante a homologacao local de 14/07/2026.

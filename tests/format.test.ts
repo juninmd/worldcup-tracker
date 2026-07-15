@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fmtFulltime, fmtGoalCaption, isUpset, youtubeSearchLink } from "../src/format.ts";
+import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, isUpset, youtubeSearchLink } from "../src/format.ts";
 import type { Prediction, TimelineItem, WcEvent } from "../src/types.ts";
 
 const basePred: Prediction = {
@@ -49,6 +49,14 @@ test("fmtFulltime: no zebra line when the favourite wins", () => {
   expect(out).not.toContain("ZEBRA");
 });
 
+test("fmtPrematch: distinguishes official ranking from versioned internal priors", async () => {
+  const { fmtPrematch } = await import("../src/format.ts");
+  const out = fmtPrematch(dummyEvent, { ...basePred, fifaRankHome: 6, fifaRankAway: 23 });
+  expect(out).toContain("Ranking FIFA (11/06/2026)");
+  expect(out).toContain("Modelo interno");
+  expect(out).toContain("índice manual de elenco");
+});
+
 test("fmtFulltime: always includes a highlights search link (strVideo is never populated by the FIFA feed)", () => {
   const out = fmtFulltime(dummyEvent, basePred, []);
   expect(out).toContain("Melhores momentos");
@@ -64,4 +72,19 @@ test("fmtGoalCaption: includes goal-video and FIFA player-video search links", (
   expect(out).toContain("Vídeo do gol");
   expect(out).toContain("Vídeos do jogador");
   expect(out).toContain(encodeURIComponent("Julian Quinones").replace(/%20/g, "%20"));
+});
+
+test("fmtDailyMenu: an eliminated Brazil is history, not a next step or title favorite", () => {
+  const loss = {
+    round: "Oitavas", home: "Brazil", away: "Norway", winner: "Norway", real: true,
+    prediction: { ...basePred, homeGoals: 1, awayGoals: 2, fifaRankHome: 6, fifaRankAway: 23 },
+  };
+  const out = fmtDailyMenu("2026-07-14", [], new Map(), [], [
+    { team: "Spain", elo: 2100, playerQuality: 52, strength: 2152, prob: 1 },
+  ], [], [loss]);
+  expect(out).toContain("CAMPANHA DO BRASIL ENCERRADA");
+  expect(out).toContain("1×2");
+  expect(out).not.toContain("PRÓXIMOS PASSOS DO BRASIL");
+  expect(out).not.toContain("Brasil vence");
+  expect(out).toContain("Monte Carlo + chave atual");
 });

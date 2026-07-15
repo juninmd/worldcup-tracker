@@ -1,8 +1,8 @@
-import { championForecast } from "./champion.ts";
+import { bracketAwareChampionForecast, championForecast } from "./champion.ts";
 import { predictMatch } from "./predict.ts";
 import { postDailyMenu, ratingsNow, replayDate, trackForever } from "./engine.ts";
 import { postTournamentProjection } from "./engine.ts";
-import { mergedSeasonEvents } from "./sportsdb.ts";
+import { isFinished, mergedSeasonEvents } from "./sportsdb.ts";
 import { fmtScorers, postTopScorers, topScorers } from "./scorers.ts";
 import { fmtCards, postTopCards, topCards } from "./cards.ts";
 import { buildMatchDigest, analyzeMatch, fmtAnalysis, postMatchAnalysis } from "./analysis.ts";
@@ -22,6 +22,10 @@ import { postDetails } from "./details.ts";
 import { fmtCurrentStandings, fmtKnockout, postStandings, postKnockout } from "./standings.ts";
 import { fmtTournamentProjection, tournamentProjection } from "./tournament.ts";
 import { homologateForecast, homologateFull, homologateTelegramDryRun } from "./homologation.ts";
+import { buildLeakFreeBacktest, evaluatePredictions, fmtModelMetrics } from "./metrics.ts";
+import { evaluatedPredictionSnapshots, settlePredictionSnapshot } from "./db.ts";
+import { brazilMetrics, fmtBrazilMetrics } from "./brazil.ts";
+import { fmtOperationalStatus, runtimeStatus } from "./operations.ts";
 
 function todayBRT(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -214,11 +218,36 @@ switch (cmd) {
   case "champion": {
     const { table, all } = await ratingsNow();
     const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];
-    for (const c of championForecast(table, teams).slice(0, 10))
+    const projection = await tournamentProjection();
+    const { simulateKnockout } = await import("./simulate.ts");
+    const simulation = simulateKnockout(projection, table, all);
+    const odds = bracketAwareChampionForecast(championForecast(table, teams), simulation?.title ?? null);
+    for (const c of odds.slice(0, 10))
       console.log(`${(c.prob * 100).toFixed(1)}%  ${c.team} (Elo ${c.elo}, elenco +${c.playerQuality}, força ${c.strength})`);
     break;
   }
+  case "metrics":
+  case "metricas": {
+    const all = await mergedSeasonEvents();
+    for (const event of all.filter(isFinished)) settlePredictionSnapshot(event);
+    const production = evaluatedPredictionSnapshots();
+    console.log("=== PRODUÇÃO: snapshots publicados ===");
+    console.log(fmtModelMetrics(evaluatePredictions(production)));
+    console.log("\n=== BACKTEST TEMPORAL: torneio ===");
+    console.log(fmtModelMetrics(evaluatePredictions(buildLeakFreeBacktest(all))));
+    break;
+  }
+  case "brazil":
+  case "brasil": {
+    console.log(fmtBrazilMetrics(await brazilMetrics()));
+    break;
+  }
+  case "status":
+  case "ops": {
+    console.log(fmtOperationalStatus(await runtimeStatus()));
+    break;
+  }
   default:
-    console.log("commands: menu [date] | track | homologate [date|forecast|full|telegram-dry-run] [--send] | predict <H> <A> | champion | forecast [--send] | scorers [--send] | cards [--send] | venues [--send] | squad <team> [--send] | trivia [--send] | goaltimes [--send] | live [--send] | highlights [--send] | h2h <A> <B> [--send] | streaks [--send] | confederations [--send] | info [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send]");
+    console.log("commands: menu [date] | track | homologate [date|forecast|full|telegram-dry-run] [--send] | predict <H> <A> | champion | forecast [--send] | metrics | brazil | status | scorers [--send] | cards [--send] | venues [--send] | squad <team> [--send] | trivia [--send] | goaltimes [--send] | live [--send] | highlights [--send] | h2h <A> <B> [--send] | streaks [--send] | confederations [--send] | info [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send]");
     console.log("merged events:", (await mergedSeasonEvents()).length);
 }

@@ -3,7 +3,7 @@ import type { CardTally } from "./cards.ts";
 import type { TableRow, IntensityBucket } from "./types.ts";
 import type { TournamentProjection } from "./tournament.ts";
 import type { ChampionOdds } from "./champion.ts";
-import { byGroup } from "./standings.ts";
+import { byGroup, qualificationStatuses } from "./standings.ts";
 
 // QuickChart renders Chart.js configs to a PNG with no API key — used to turn
 // the standings/scorers tables into shareable card images.
@@ -104,13 +104,12 @@ export function matchIntensityChartUrl(buckets: IntensityBucket[], home: string,
   );
 }
 
-/** Horizontal bar of points; teams currently qualifying (top 2 of their group)
- *  are highlighted green, the rest grey. */
+/** Horizontal bar of points; direct qualifiers and qualified best thirds are green. */
 export function standingsChartUrl(rows: TableRow[]): string | null {
   if (!rows.length) return null;
-  const qualifying = new Set<string>();
-  for (const list of byGroup(rows).values())
-    for (const r of list.slice(0, 2)) qualifying.add(r.strTeam);
+  const statuses = qualificationStatuses(rows);
+  const provisionalTop = new Set<string>();
+  for (const list of byGroup(rows).values()) for (const row of list.slice(0, 2)) provisionalTop.add(row.strTeam);
 
   const sorted = [...rows].sort(
     (a, b) => (Number(b.intPoints) || 0) - (Number(a.intPoints) || 0),
@@ -123,12 +122,13 @@ export function standingsChartUrl(rows: TableRow[]): string | null {
         datasets: [{
           label: "Pontos",
           data: sorted.map((r) => Number(r.intPoints) || 0),
-          backgroundColor: sorted.map((r) => (qualifying.has(r.strTeam) ? GREEN : GREY)),
+          backgroundColor: sorted.map((r) => statuses.get(r.strTeam) === "qualified" || provisionalTop.has(r.strTeam)
+            ? GREEN : statuses.get(r.strTeam) === "provisional" ? AMBER : GREY),
         }],
       },
       options: {
         legend: { display: false },
-        title: { display: true, text: "Classificação (pontos) — verde = zona de classificação", fontSize: 14 },
+        title: { display: true, text: "Classificação — verde: classificado · amarelo: provisório", fontSize: 14 },
         scales: { xAxes: [{ ticks: { beginAtZero: true, precision: 0 } }] },
       },
     },

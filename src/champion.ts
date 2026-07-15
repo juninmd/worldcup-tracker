@@ -1,4 +1,4 @@
-import { playerQuality, rating, teamStrength } from "./elo.ts";
+import { canonicalTeam, playerQuality, rating, teamStrength } from "./elo.ts";
 
 export interface ChampionOdds {
   team: string;
@@ -35,5 +35,18 @@ export function championForecast(
       strength: s.strength,
       prob: s.w / sum,
     }))
+    .sort((a, b) => b.prob - a.prob);
+}
+
+/** Replace raw-strength softmax with bracket-aware Monte Carlo probabilities. */
+export function bracketAwareChampionForecast(
+  raw: ChampionOdds[],
+  simulated: { team: string; prob: number }[] | null,
+): ChampionOdds[] {
+  if (!simulated) return raw;
+  const probabilities = new Map(simulated.map((row) => [canonicalTeam(row.team), row.prob]));
+  return raw
+    .filter((row) => probabilities.has(canonicalTeam(row.team)))
+    .map((row) => ({ ...row, prob: probabilities.get(canonicalTeam(row.team))! }))
     .sort((a, b) => b.prob - a.prob);
 }

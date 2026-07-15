@@ -1,5 +1,8 @@
 import type { WcEvent, MatchOutcome } from "./types.ts";
 
+export const MODEL_VERSION = "2026.07.1";
+export const FIFA_RANK_AS_OF = "11/06/2026";
+
 // Seed strength prior (FIFA ranking/Elo-style, approx. 2026 field strength).
 // FIFA official ranking reference: 2026-06-11. Finished matches update it below.
 const SEED: Record<string, number> = {
@@ -121,8 +124,8 @@ export function knownTeams(): string[] {
 // FIFA men's ranking positions (June 2026). Used for display + tie-breaking only;
 // Elo/strength is the actual prediction input.
 const FIFA_RANK: Record<string, number> = {
-  Argentina: 1, France: 2, Spain: 3, England: 4, Brazil: 5,
-  Portugal: 6, Netherlands: 7, Belgium: 8, Germany: 9, Uruguay: 10,
+  Argentina: 1, Spain: 2, France: 3, England: 4, Portugal: 5, Brazil: 6,
+  Netherlands: 7, Belgium: 8, Germany: 9, Uruguay: 10,
   Colombia: 11, Croatia: 12, Morocco: 13, USA: 14, Italy: 15,
   Switzerland: 16, Japan: 17, Denmark: 18, Senegal: 19, Turkey: 20,
   Austria: 21, "Korea Republic": 22, Norway: 23, Ecuador: 24, Nigeria: 25,

@@ -2,7 +2,7 @@ import type { WcEvent, Prediction, Player, TimelineItem } from "./types.ts";
 import type { ChampionOdds } from "./champion.ts";
 import type { ProjectedMatch } from "./tournament.ts";
 import type { Scorer } from "./scorers.ts";
-import { canonicalTeam } from "./elo.ts";
+import { canonicalTeam, FIFA_RANK_AS_OF, MODEL_VERSION } from "./elo.ts";
 
 const FLAGS: Record<string, string> = {
   Brazil: "🇧🇷", Argentina: "🇦🇷", France: "🇫🇷", Spain: "🇪🇸", England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
@@ -85,11 +85,11 @@ export function fmtPrematch(
 ): string {
   const fav = p.pHome >= p.pAway ? e.strHomeTeam : e.strAwayTeam;
   const rankLine = (p.fifaRankHome && p.fifaRankAway)
-    ? `🌍 Ranking FIFA: ${flag(e.strHomeTeam)} *#${p.fifaRankHome}* ${e.strHomeTeam} vs ${e.strAwayTeam} *#${p.fifaRankAway}* ${flag(e.strAwayTeam)}`
+    ? `🌍 Ranking FIFA (${FIFA_RANK_AS_OF}): ${flag(e.strHomeTeam)} *#${p.fifaRankHome}* ${e.strHomeTeam} vs ${e.strAwayTeam} *#${p.fifaRankAway}* ${flag(e.strAwayTeam)}`
     : p.fifaRankHome
-    ? `🌍 Ranking FIFA: ${e.strHomeTeam} *#${p.fifaRankHome}*`
+    ? `🌍 Ranking FIFA (${FIFA_RANK_AS_OF}): ${e.strHomeTeam} *#${p.fifaRankHome}*`
     : p.fifaRankAway
-    ? `🌍 Ranking FIFA: ${e.strAwayTeam} *#${p.fifaRankAway}*`
+    ? `🌍 Ranking FIFA (${FIFA_RANK_AS_OF}): ${e.strAwayTeam} *#${p.fifaRankAway}*`
     : "";
   const eloDiff = Math.abs(p.strengthHome - p.strengthAway);
   const dominance = eloDiff > 150 ? "superioridade clara" : eloDiff > 80 ? "ligeiro favoritismo" : "jogo equilibrado";
@@ -114,7 +114,7 @@ export function fmtPrematch(
     oddsBar(p.pHome, p.pDraw, p.pAway),
     ``,
     `💪 Favorito: *${fav}*`,
-    `🧠 Elo ${p.eloHome} vs ${p.eloAway} · elenco +${p.playerQualityHome} vs +${p.playerQualityAway} · força ${p.strengthHome} vs ${p.strengthAway}`,
+    `🧠 Modelo interno ${MODEL_VERSION}: Elo ${p.eloHome} vs ${p.eloAway} · índice manual de elenco +${p.playerQualityHome} vs +${p.playerQualityAway} · força ${p.strengthHome} vs ${p.strengthAway}`,
   ].filter(Boolean).join("\n");
 }
 
@@ -258,10 +258,26 @@ export function fmtDailyMenu(
         `${i + 1}. ${flag(s.team)} ${s.player} (${s.team}) — *${s.goals}* ⚽️`).join("\n")
     : "_Sem gols ainda._";
 
+  const lastBrazilMatch = brazilPath.at(-1);
+  const brazilEliminated = lastBrazilMatch?.real && canonicalTeam(lastBrazilMatch.winner) !== "Brazil";
+  const brazilChampion = lastBrazilMatch?.real && lastBrazilMatch.round === "Final" && canonicalTeam(lastBrazilMatch.winner) === "Brazil";
+  const brazilHistory = () => brazilPath.map((m) => {
+    const home = canonicalTeam(m.home) === "Brazil";
+    const opponent = home ? m.away : m.home;
+    const brazilGoals = home ? m.prediction.homeGoals : m.prediction.awayGoals;
+    const opponentGoals = home ? m.prediction.awayGoals : m.prediction.homeGoals;
+    return `• *${m.round}*: Brasil ${brazilGoals}×${opponentGoals} ${flag(opponent)} ${opponent} — ${canonicalTeam(m.winner) === "Brazil" ? "✅ avançou" : "❌ eliminado"}`;
+  });
+  const futureBrazilPath = brazilPath.filter((match) => !match.real);
   const brazilSection = brazilPath.length
-    ? [
+    ? brazilEliminated || brazilChampion
+      ? [
+        brazilChampion ? `🇧🇷 *BRASIL CAMPEÃO*` : `🇧🇷 *CAMPANHA DO BRASIL ENCERRADA*`,
+        ...brazilHistory(),
+      ].join("\n")
+      : [
         `🇧🇷 *PRÓXIMOS PASSOS DO BRASIL*`,
-        ...brazilPath.slice(0, 3).map((m) => {
+        ...futureBrazilPath.slice(0, 3).map((m) => {
           const isBrazilHome = canonicalTeam(m.home) === "Brazil";
           const opponent = isBrazilHome ? m.away : m.home;
           const pBrazil = isBrazilHome ? m.prediction.pHome : m.prediction.pAway;
@@ -280,6 +296,6 @@ export function fmtDailyMenu(
     brazilSection, brazilSection ? `` : null,
     `*Últimos resultados:*`, last, ``,
     `⚽️ *Artilheiros:*`, art, ``,
-    `🏆 *Favoritos ao título (FIFA/Elo + elenco):*`, odds,
+    `🏆 *Favoritos ao título (Monte Carlo + chave atual):*`, odds,
   ].filter((x) => x !== null).join("\n");
 }

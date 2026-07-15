@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { tournamentCircleChartUrl, tournamentFlameChartUrl } from "../src/charts.ts";
+import { standingsChartUrl, tournamentCircleChartUrl, tournamentFlameChartUrl } from "../src/charts.ts";
 import type { TournamentProjection, ProjectedMatch } from "../src/tournament.ts";
+import type { TableRow } from "../src/types.ts";
 
 const match = (round: string, home: string, away: string, winner: string, real = false): ProjectedMatch => ({
   round, home, away, winner, real,
@@ -37,4 +38,20 @@ test("tournamentCircleChartUrl: null on empty knockout", () => {
 
 test("tournamentFlameChartUrl still renders", () => {
   expect(tournamentFlameChartUrl(projection)).toContain("quickchart.io/graphviz");
+});
+
+test("standingsChartUrl: best eight thirds are green and eliminated thirds are grey", () => {
+  const row = (group: string, team: string, points: number): TableRow => ({
+    intRank: null, strTeam: team, strGroup: group, intPlayed: "3", intWin: null, intDraw: null, intLoss: null,
+    intGoalsFor: "3", intGoalsAgainst: "2", intGoalDifference: "1", intPoints: String(points),
+  });
+  const rows = "ABCDEFGHIJKL".split("").flatMap((group, index) => [
+    row(group, `${group}1`, 9), row(group, `${group}2`, 6), row(group, `${group}3`, 12 - index), row(group, `${group}4`, 0),
+  ]);
+  const config = JSON.parse(new URL(standingsChartUrl(rows)!).searchParams.get("c")!) as {
+    data: { labels: string[]; datasets: { backgroundColor: string[] }[] };
+  };
+  const colors = config.data.datasets[0]!.backgroundColor;
+  expect(colors[config.data.labels.indexOf("A3")]).toBe("#16a34a");
+  expect(colors[config.data.labels.indexOf("L3")]).toBe("#94a3b8");
 });

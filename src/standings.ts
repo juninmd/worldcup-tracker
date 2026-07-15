@@ -8,6 +8,13 @@ import { tournamentProjection, type ProjectedTeam } from "./tournament.ts";
 
 const num = (v: string | null | undefined) => Number(v ?? 0) || 0;
 const FULL_FIELD = 48;
+export type QualificationStatus = "qualified" | "eliminated" | "provisional";
+
+const compareRows = (a: TableRow, b: TableRow): number =>
+  num(b.intPoints) - num(a.intPoints) ||
+  num(b.intGoalDifference) - num(a.intGoalDifference) ||
+  num(b.intGoalsFor) - num(a.intGoalsFor) ||
+  a.strTeam.localeCompare(b.strTeam);
 
 /** Group rows by strGroup, sorted by points → goal difference → goals for. */
 export function byGroup(rows: TableRow[]): Map<string, TableRow[]> {
@@ -17,23 +24,38 @@ export function byGroup(rows: TableRow[]): Map<string, TableRow[]> {
     (groups.get(g) ?? groups.set(g, []).get(g)!).push(r);
   }
   for (const list of groups.values()) {
-    list.sort((a, b) =>
-      num(b.intPoints) - num(a.intPoints) ||
-      num(b.intGoalDifference) - num(a.intGoalDifference) ||
-      num(b.intGoalsFor) - num(a.intGoalsFor) ||
-      a.strTeam.localeCompare(b.strTeam));
+    list.sort(compareRows);
   }
   return new Map([...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+}
+
+export function qualificationStatuses(rows: TableRow[]): Map<string, QualificationStatus> {
+  const statuses = new Map(rows.map((row) => [row.strTeam, "provisional" as QualificationStatus]));
+  const groups = byGroup(rows);
+  const complete = groups.size === 12 && [...groups.values()].every((group) =>
+    group.length === 4 && group.every((row) => num(row.intPlayed) >= 3));
+  if (!complete) return statuses;
+
+  for (const team of statuses.keys()) statuses.set(team, "eliminated");
+  for (const group of groups.values()) {
+    for (const row of group.slice(0, 2)) statuses.set(row.strTeam, "qualified");
+  }
+  const thirds = [...groups.values()].map((group) => group[2]!).sort(compareRows);
+  for (const row of thirds.slice(0, 8)) statuses.set(row.strTeam, "qualified");
+  return statuses;
 }
 
 export function fmtStandings(rows: TableRow[]): string {
   if (!rows.length) return "📊 *CLASSIFICAÇÃO* — _ainda sem dados de grupos._";
   const out = [`📊 *CLASSIFICAÇÃO — Copa do Mundo 2026*`, ``];
-  for (const [g, list] of byGroup(rows)) {
+  const groups = byGroup(rows);
+  const statuses = qualificationStatuses(rows);
+  for (const [g, list] of groups) {
     out.push(`*${g}*`);
     out.push("`#  Time            P   J   SG`");
     list.forEach((r, i) => {
-      const mark = i < 2 ? "🟢" : "⚪";
+      const status = statuses.get(r.strTeam);
+      const mark = status === "qualified" ? "✅" : status === "eliminated" ? "❌" : i < 2 ? "🟢" : "🟡";
       const name = `${r.strTeam}`.padEnd(14).slice(0, 14);
       const pts = String(num(r.intPoints)).padStart(2);
       const pj = String(num(r.intPlayed)).padStart(2);
@@ -42,7 +64,20 @@ export function fmtStandings(rows: TableRow[]): string {
     });
     out.push("");
   }
-  out.push("_🟢 zona de classificação (top 2 do grupo)_");
+  const complete = ![...statuses.values()].includes("provisional");
+  if (complete) {
+    const thirds = [...groups.values()].map((group) => group[2]!).sort(compareRows);
+    out.push("*MELHORES TERCEIROS*", "`#  Time            P   SG  Situação`");
+    thirds.forEach((row, index) => {
+      const qualified = statuses.get(row.strTeam) === "qualified";
+      const name = row.strTeam.padEnd(14).slice(0, 14);
+      const gd = `${num(row.intGoalDifference) >= 0 ? "+" : ""}${num(row.intGoalDifference)}`;
+      out.push(`${qualified ? "✅" : "❌"}${index + 1} \`${name}\` ${String(num(row.intPoints)).padStart(2)}  ${gd.padStart(3)}  ${qualified ? "classificado" : "eliminado"}`);
+    });
+    out.push("", "_✅ top 2 de cada grupo + 8 melhores terceiros; ❌ eliminado._");
+  } else {
+    out.push("_🟢 top 2 provisório · 🟡 disputa entre terceiros; classificação ainda não encerrada._");
+  }
   return out.join("\n");
 }
 

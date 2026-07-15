@@ -2,7 +2,7 @@ import type { Prediction, WcEvent, TimelineItem } from "./types.ts";
 import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSeasonEvents, seasonEvents, timeline, substitutionEvents, varIncidents, cardEvents } from "./sportsdb.ts";
 import { trainRatings, outcomeOf } from "./elo.ts";
 import { calibrateGoals, predictMatch } from "./predict.ts";
-import { championForecast } from "./champion.ts";
+import { bracketAwareChampionForecast, championForecast } from "./champion.ts";
 import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag, isUpset, kickoff, parseUtc } from "./format.ts";
 import { sendMediaGroup, sendMessage, sendPhoto, sendPhotoStrict } from "./telegram.ts";
 import { loadState, saveState } from "./state.ts";
@@ -36,6 +36,7 @@ import {
   type TeamForm,
 } from "./charts.ts";
 import type { ChampionOdds } from "./champion.ts";
+import { predictionFromSnapshot, predictionSnapshot, recordOperationalEvent, savePredictionSnapshot, settlePredictionSnapshot } from "./db.ts";
 
 const HEARTBEAT = new URL("../data/heartbeat", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
@@ -65,10 +66,16 @@ export async function postDailyMenu(date: string): Promise<void> {
     home: pens.get(canonicalTeam(e.strHomeTeam)) ?? 0,
     away: pens.get(canonicalTeam(e.strAwayTeam)) ?? 0,
   })]));
+  for (const event of today.filter((event) => !isFinished(event))) {
+    const prediction = preds.get(event.idEvent);
+    if (prediction) savePredictionSnapshot(event, prediction, "daily_menu");
+  }
   const recent = all.filter(isFinished)
     .sort((a, b) => (b.strTimestamp ?? "").localeCompare(a.strTimestamp ?? ""));
   const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];
-  const champ = championForecast(table, teams);
+  const projection = await tournamentProjection();
+  const simulation = simulateKnockout(projection, table, all);
+  const champ = bracketAwareChampionForecast(championForecast(table, teams), simulation?.title ?? null);
   // Headline an actual game still to come today, not one that already finished
   // (the day feed lists late-night fixtures under the next calendar day).
   const upcoming = today.filter((e) => !isFinished(e));
@@ -80,7 +87,6 @@ export async function postDailyMenu(date: string): Promise<void> {
       : `📅 Jogos de hoje — ${date}`;
     await sendPhoto(cover, caption);
   }
-  const projection = await tournamentProjection();
   await sendMessage(fmtDailyMenu(date, today, preds, recent, champ, await topScorers(), projection.brazilPath));
 
   // Each of these is a self-contained "bonus" broadcast — a transient failure in
@@ -193,6 +199,7 @@ export async function postPrematch(e: WcEvent): Promise<void> {
   const caption = `⚽️ ${ev.strHomeTeam} x ${ev.strAwayTeam}`;
   if (art.length) await sendMediaGroup(art, caption);
   const pred = predictMatch(table, ev.strHomeTeam, ev.strAwayTeam, all, true, pen);
+  savePredictionSnapshot(ev, pred, "prematch");
   await sendMessage(fmtPrematch(ev, pred, absences));
   // Qualitative LLM take on the fixture — best-effort.
   try {
@@ -211,9 +218,16 @@ async function announceGoal(e: WcEvent, g: TimelineItem, score: string): Promise
 }
 
 export async function postFulltime(e: WcEvent, state?: Awaited<ReturnType<typeof loadState>>): Promise<void> {
-  const { all, table } = await ratingsNow();
+  const all = await mergedSeasonEvents();
   const ev = (await eventDetail(e.idEvent)) ?? e;
-  const pred = predictMatch(table, ev.strHomeTeam, ev.strAwayTeam, all);
+  const snapshot = predictionSnapshot(ev.idEvent);
+  const prior = all.filter((candidate) => isFinished(candidate) && candidate.idEvent !== ev.idEvent &&
+    (candidate.strTimestamp ?? candidate.dateEvent) < (ev.strTimestamp ?? ev.dateEvent));
+  if (!snapshot) calibrateGoals(prior);
+  const pred = snapshot
+    ? predictionFromSnapshot(snapshot)
+    : predictMatch(trainRatings(prior), ev.strHomeTeam, ev.strAwayTeam, prior);
+  settlePredictionSnapshot(ev);
   let goals = onlyGoals(await timeline(ev.idEvent));
   await sendMessage(fmtFulltime(ev, pred, goals));
   await postDetails(ev);
@@ -381,8 +395,10 @@ export async function trackForever(): Promise<void> {
   let prevLive = -1;
   for (;;) {
     let live = 0;
+    const started = Date.now();
     try {
       live = await pollOnce();
+      recordOperationalEvent({ subsystem: "poll", operation: live > 0 ? "live" : "idle", outcome: "ok", latencyMs: Date.now() - started });
       // Log only when the live-match count changes — a per-tick heartbeat floods
       // ~5.8k lines/day and buries real errors. The heartbeat file below already
       // proves liveness for the k8s probe.
@@ -391,6 +407,7 @@ export async function trackForever(): Promise<void> {
         prevLive = live;
       }
     } catch (err) {
+      recordOperationalEvent({ subsystem: "poll", operation: "cycle", outcome: "error", latencyMs: Date.now() - started });
       console.error("poll error:", (err as Error).message);
     }
     // Liveness heartbeat: a healthy loop refreshes this file every pass; the

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { trainRatings, expectancy, outcomeOf } from "../src/elo.ts";
 import { calibrateGoals, expectedGoalsFromMatrix, predictMatch, scoreMatrix } from "../src/predict.ts";
-import { championForecast } from "../src/champion.ts";
+import { bracketAwareChampionForecast, championForecast } from "../src/champion.ts";
 import type { WcEvent } from "../src/types.ts";
 
 const ev = (h: string, a: string, hs: string, as: string): WcEvent => ({
@@ -58,6 +58,16 @@ test("championForecast: normalized, ranked desc", () => {
   expect(odds.reduce((s, o) => s + o.prob, 0)).toBeCloseTo(1, 5);
   expect(odds[0]!.prob).toBeGreaterThanOrEqual(odds[1]!.prob);
   expect(odds[0]!.strength).toBe(odds[0]!.elo + odds[0]!.playerQuality);
+});
+
+test("bracketAwareChampionForecast: eliminated teams have zero title probability", () => {
+  const raw = championForecast(trainRatings([]), ["Brazil", "Spain", "Argentina"]);
+  const adjusted = bracketAwareChampionForecast(raw, [
+    { team: "Spain", prob: 0.6 }, { team: "Argentina", prob: 0.4 },
+  ]);
+  expect(adjusted.map((team) => team.team)).toEqual(["Spain", "Argentina"]);
+  expect(adjusted.reduce((sum, team) => sum + team.prob, 0)).toBeCloseTo(1, 8);
+  expect(adjusted.find((team) => team.team === "Brazil")).toBeUndefined();
 });
 
 test("scoreMatrix: normalized and consistent with predictMatch", () => {
