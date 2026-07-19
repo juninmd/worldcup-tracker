@@ -3,7 +3,7 @@ import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSea
 import { trainRatings, outcomeOf } from "./elo.ts";
 import { calibrateGoals, predictMatch } from "./predict.ts";
 import { bracketAwareChampionForecast, championForecast } from "./champion.ts";
-import { fmtBrazilFriendlies, fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag, isUpset, kickoff, nextWorldCupLine, parseUtc } from "./format.ts";
+import { fmtBrazilFriendlies, fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag, kickoff, nextWorldCupLine, parseUtc } from "./format.ts";
 import { sendMediaGroup, sendMessage, sendPhoto, sendPhotoStrict } from "./telegram.ts";
 import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
@@ -286,14 +286,13 @@ export async function postFulltime(e: WcEvent, state?: Awaited<ReturnType<typeof
   await sendMessage(fmtFulltime(ev, pred, goals));
   await postDetails(ev);
 
-  const h = Number(ev.intHomeScore), a = Number(ev.intAwayScore);
-  if (state && isUpset(pred, h, a) && !state.postedAnalysis.includes(ev.idEvent)) {
-    // Zebra result — ask the LLM analyst to dig into why the favourite fell,
-    // reusing the same post-match digest as the manual `analysis --send` command.
+  // Post-match AI post-mortem for EVERY finished match (dedup per event, best-effort:
+  // the LLM gateway may be down/slow and must never block the full-time flow).
+  if (state && !state.postedAnalysis.includes(ev.idEvent)) {
     try {
       await postMatchAnalysis(ev);
     } catch (err) {
-      console.error("zebra analysis failed:", (err as Error).message);
+      console.error("match analysis failed:", (err as Error).message);
     }
     state.postedAnalysis.push(ev.idEvent);
     await saveState(state);
