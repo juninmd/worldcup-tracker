@@ -105,20 +105,23 @@ export interface BrazilPostMortemInput {
 }
 
 const BrazilPostMortemSchema = z.object({
-  diagnostico: z.string().describe("2 a 4 frases: por que o Brasil caiu, ancorado nos números fornecidos, em português do Brasil."),
-  ondeErrou: z.array(z.string()).min(2).max(4).describe("Pontos concretos de erro (setor, fase do jogo, conversão de chances) — sem inventar nomes de jogadores."),
-  deveriaMelhorar: z.array(z.string()).min(2).max(3).describe("Recomendações concretas do que deveria ter sido melhor."),
-  quemAtrapalhou: z.string().describe("Aponte quem mais atrapalhou, citando NÚMEROS REAIS: nome + nota + passes errados dos jogadores nas listas de desempenho/incidentes (ex.: 'Fulano (nota 5,2; 9 passes errados)'). Só cite nomes dessas listas; nunca invente notas ou passes."),
+  diagnostico: z.string().min(120).describe("OBRIGATORIAMENTE 2 a 4 frases completas em português do Brasil explicando por que o Brasil caiu, ancorado nos números fornecidos. NUNCA um rótulo, slug ou título curto (ex.: 'tático', 'maracanazo') — isso é inválido."),
+  ondeErrou: z.array(z.string()).min(2).max(4).describe("Cada item é uma FRASE COMPLETA em português sobre um erro concreto (setor, fase do jogo, conversão). Sem camelCase, sem identificadores, sem inventar minutos/mecânica não fornecidos."),
+  deveriaMelhorar: z.array(z.string()).min(2).max(3).describe("Cada item uma frase completa com recomendação concreta do que deveria ter sido melhor."),
+  quemAtrapalhou: z.string().min(40).describe("Frase(s) completa(s), nunca vazio nem token curto/aleatório. Aponte quem mais atrapalhou citando NÚMEROS REAIS: nome + nota + passes errados/perda de bola das listas de desempenho/incidentes (ex.: 'Fulano (nota 5,2; 9 passes errados)'). Só cite nomes dessas listas; se os números não sustentam culpar ninguém, diga isso e aponte a causa coletiva."),
 });
 
 export type BrazilPostMortem = z.infer<typeof BrazilPostMortemSchema>;
 
 const POSTMORTEM_SYSTEM = [
   "Você é um analista tático do futebol brasileiro, escrevendo em português do Brasil, crítico e direto.",
-  "Recebe métricas REAIS da campanha do Brasil na Copa 2026 (derivadas do feed oficial FIFA) e faz um post-mortem da eliminação.",
-  "Baseie-se SOMENTE nos dados fornecidos. Você pode citar por NOME apenas jogadores que aparecem nas listas fornecidas: INCIDENTES REAIS (pênaltis perdidos, cartões vermelhos) e DESEMPENHO POR JOGADOR (notas FotMob/Opta e passes certos/errados).",
-  "Ao acusar quem atrapalhou, use os NÚMEROS REAIS dessas listas (nota baixa, muitos passes errados) — nunca invente notas, passes ou métricas que não estejam ali.",
+  "Recebe dados REAIS da campanha do Brasil na Copa do Mundo (métricas do feed oficial FIFA + notas/passes FotMob) e faz um post-mortem da eliminação. Use a edição e a fase exatamente como vierem no cabeçalho — nunca presuma o ano.",
+  "Baseie-se SOMENTE nos dados fornecidos. Você pode citar por NOME apenas jogadores que aparecem nas listas: INCIDENTES REAIS (pênaltis perdidos, cartões) e DESEMPENHO POR JOGADOR (notas/passes/perda de bola). Ao acusar, use os NÚMEROS REAIS dessas listas.",
+  "PROIBIDO inventar detalhes que não estão nos dados: minuto de gol/cartão, como o gol saiu, quem cruzou, tipo de cartão, número de finalizações — se não foi fornecido, não afirme. Na dúvida, fale de forma geral, sem cravar especificidade falsa.",
   "Se um jogador não está em nenhuma lista, não o cite: fale de setores (defesa, meio, ataque), fases do jogo e números agregados.",
+  "Nuance obrigatória: se os números NÃO sustentam culpar um jogador (ex.: boa nota, poucos erros), diga que a responsabilização individual seria injusta e aponte a causa coletiva/tática real — não repita bode expiatório histórico sem base nos dados.",
+  "Escreva SEMPRE frases completas em português. NUNCA devolva rótulos, slugs, camelCase, identificadores ou palavras coladas — nem no diagnóstico nem nos itens das listas.",
+  "NUNCA produza caminhos, URLs, tags de moderação ou tokens com barras (ex.: '/privado/...', '/nsfw', 'athlete/...') — apenas texto natural em português.",
 ].join(" ");
 
 function postMortemPrompt(input: BrazilPostMortemInput): string {
@@ -138,19 +141,33 @@ function postMortemPrompt(input: BrazilPostMortemInput): string {
   ].join("\n");
 }
 
+// gpt-oss occasionally emits path/tag garbage (e.g. "/privado/athlete/..", "/nsfw:")
+// instead of prose — schema length checks don't catch it, so reject and retry.
+const GARBAGE = /\/(?:privado|nsfw|athlete|internal|system|assistant|user)\b|\bnsfw\s*[:/]/i;
+function hasGarbage(o: BrazilPostMortem): boolean {
+  return [o.diagnostico, o.quemAtrapalhou, ...o.ondeErrou, ...o.deveriaMelhorar].some((f) => GARBAGE.test(f));
+}
+
 export async function brazilPostMortem(input: BrazilPostMortemInput): Promise<BrazilPostMortem> {
-  const completion = await client().chat.completions.parse({
-    model: LITELLM_MODEL,
-    max_tokens: 4096,
-    messages: [
-      { role: "system", content: POSTMORTEM_SYSTEM },
-      { role: "user", content: postMortemPrompt(input) },
-    ],
-    response_format: zodResponseFormat(BrazilPostMortemSchema, "brazil_post_mortem"),
-  });
-  const parsed = completion.choices[0]?.message.parsed;
-  if (!parsed) throw new Error("LiteLLM did not return a parseable Brazil post-mortem");
-  return parsed;
+  let last: BrazilPostMortem | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const completion = await client().chat.completions.parse({
+      model: LITELLM_MODEL,
+      max_tokens: 4096,
+      messages: [
+        { role: "system", content: POSTMORTEM_SYSTEM },
+        { role: "user", content: postMortemPrompt(input) },
+      ],
+      response_format: zodResponseFormat(BrazilPostMortemSchema, "brazil_post_mortem"),
+    });
+    const parsed = completion.choices[0]?.message.parsed;
+    if (!parsed) continue;
+    last = parsed;
+    if (!hasGarbage(parsed)) return parsed;
+  }
+  if (!last) throw new Error("LiteLLM did not return a parseable Brazil post-mortem");
+  if (hasGarbage(last)) throw new Error("Brazil post-mortem returned malformed content twice");
+  return last;
 }
 
 export function fmtBrazilPostMortem(input: BrazilPostMortemInput, o: BrazilPostMortem): string {
