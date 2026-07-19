@@ -167,7 +167,7 @@ export function fmtBrazilPostMortem(input: BrazilPostMortemInput, o: BrazilPostM
     ...o.deveriaMelhorar.map((e) => `• ${e}`),
     ``,
     `⚠️ *Quem/o que mais atrapalhou:* ${o.quemAtrapalhou}`,
-    `_Métricas derivadas do feed oficial FIFA; nomes só quando ancorados em incidentes reais._`,
+    `_Métricas de campanha: feed oficial FIFA · notas e passes por jogador: FotMob (dados Opta). Nomes só quando ancorados em dados reais._`,
   ].join("\n");
 }
 
