@@ -23,7 +23,7 @@ import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
 import { writeFile } from "node:fs/promises";
 import { fmtTournamentProjection, fmtTournamentSurprises, tournamentProjection } from "./tournament.ts";
 import { fmtSimulation, simulateKnockout } from "./simulate.ts";
-import { brazilMetrics, brazilRedCards, fmtBrazilMetrics } from "./brazil.ts";
+import { brazilMetrics, brazilNegativeIncidents, fmtBrazilMetrics } from "./brazil.ts";
 import { brazilFixtures } from "./sportsdb.ts";
 import { type BrazilPostMortemInput, brazilPostMortem, fmtBrazilPostMortem, fmtMatchPreview, postBracketOracle, previewMatch } from "./oracle.ts";
 import {
@@ -213,7 +213,7 @@ async function postBrazilPostMortem(projection: Awaited<ReturnType<typeof tourna
     eliminationScore: `${flag("Brazil")} Brasil ${bGoals}×${oGoals} ${opponent} ${flag(opponent)}`,
     opponent,
     metricsSummary: fmtBrazilMetrics(metrics).split("\n").slice(1),
-    redCards: await brazilRedCards(),
+    incidentsReais: await brazilNegativeIncidents(),
   };
   await sendMessage(fmtBrazilPostMortem(input, await brazilPostMortem(input)));
 }

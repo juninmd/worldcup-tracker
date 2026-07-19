@@ -1,5 +1,5 @@
 import { canonicalTeam } from "./elo.ts";
-import { cardEvents, eventStats, isFinished, lineup, mergedSeasonEvents, shotEvents, timeline, type ShotEvent } from "./sportsdb.ts";
+import { cardEvents, eventStats, isFinished, lineup, matchIncidents, mergedSeasonEvents, shotEvents, timeline, type ShotEvent } from "./sportsdb.ts";
 import type { CardEvent, TimelineItem, WcEvent } from "./types.ts";
 
 export interface BrazilMatchMetricInput {
@@ -143,18 +143,28 @@ export function calculateBrazilMetrics(inputs: BrazilMatchMetricInput[]): Brazil
   return result;
 }
 
-/** Real red cards shown to Brazil players in the tournament — the only player-name
- *  facts we let the post-mortem cite (everything else stays sector-level). */
-export async function brazilRedCards(): Promise<string[]> {
+/** Real, name-attributable negative incidents for Brazil across the tournament:
+ *  red cards and missed/saved penalties (with the taker's name), each tagged with
+ *  the opponent. These are the ONLY player-name facts we let the post-mortem cite —
+ *  the FIFA feed carries no per-player passing/turnover stats, so "quem errou mais
+ *  passes" is not derivable and must never be invented. */
+export async function brazilNegativeIncidents(): Promise<string[]> {
   const matches = (await mergedSeasonEvents())
     .filter(isFinished)
-    .filter((event) => isBrazil(event.strHomeTeam) || isBrazil(event.strAwayTeam));
+    .filter((event) => isBrazil(event.strHomeTeam) || isBrazil(event.strAwayTeam))
+    .sort((a, b) => (a.strTimestamp ?? a.dateEvent).localeCompare(b.strTimestamp ?? b.dateEvent));
   const out: string[] = [];
   for (const event of matches) {
     const opponent = isBrazil(event.strHomeTeam) ? event.strAwayTeam : event.strHomeTeam;
-    for (const card of await cardEvents(event.idEvent)) {
+    const [cards, incidents] = await Promise.all([cardEvents(event.idEvent), matchIncidents(event.idEvent)]);
+    for (const card of cards) {
       if (card.cardType === "red" && isBrazil(card.strTeam)) {
-        out.push(`${card.strPlayer ?? "jogador não identificado"} (${card.intTime}') vs ${opponent}`);
+        out.push(`${card.strPlayer ?? "jogador não identificado"} — cartão vermelho aos ${card.intTime}' vs ${opponent}`);
+      }
+    }
+    for (const inc of incidents) {
+      if (isBrazil(inc.team) && inc.player && /defendid|perd/i.test(inc.detail)) {
+        out.push(`${inc.player} — pênalti perdido (defendido pelo goleiro) aos ${inc.minute}' vs ${opponent}`);
       }
     }
   }

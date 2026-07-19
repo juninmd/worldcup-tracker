@@ -99,15 +99,15 @@ export interface BrazilPostMortemInput {
   eliminatedRound: string;
   eliminationScore: string; // "Brasil 1×2 Croácia"
   opponent: string;
-  metricsSummary: string[]; // pre-formatted data lines (xG, conversão, disciplina…)
-  redCards: string[];       // real red-card incidents: "Player (min') vs Opponent"
+  metricsSummary: string[];  // pre-formatted data lines (xG, conversão, disciplina…)
+  incidentsReais: string[];  // real name-attributable negatives: red cards, missed penalties
 }
 
 const BrazilPostMortemSchema = z.object({
   diagnostico: z.string().describe("2 a 4 frases: por que o Brasil caiu, ancorado nos números fornecidos, em português do Brasil."),
   ondeErrou: z.array(z.string()).min(2).max(4).describe("Pontos concretos de erro (setor, fase do jogo, conversão de chances) — sem inventar nomes de jogadores."),
   deveriaMelhorar: z.array(z.string()).min(2).max(3).describe("Recomendações concretas do que deveria ter sido melhor."),
-  quemAtrapalhou: z.string().describe("O fator que mais pesou negativamente. Só cite jogador por NOME se ele constar na lista de cartões vermelhos reais fornecida; caso contrário, fale do setor/função."),
+  quemAtrapalhou: z.string().describe("Aponte quem/o que mais atrapalhou. Cite jogador(es) por NOME apenas se constarem na lista de incidentes reais (pênaltis perdidos, vermelhos); se a lista estiver vazia, fale de setor/função. NUNCA acuse por 'passes errados' ou métricas individuais inexistentes."),
 });
 
 export type BrazilPostMortem = z.infer<typeof BrazilPostMortemSchema>;
@@ -115,8 +115,9 @@ export type BrazilPostMortem = z.infer<typeof BrazilPostMortemSchema>;
 const POSTMORTEM_SYSTEM = [
   "Você é um analista tático do futebol brasileiro, escrevendo em português do Brasil, crítico e direto.",
   "Recebe métricas REAIS da campanha do Brasil na Copa 2026 (derivadas do feed oficial FIFA) e faz um post-mortem da eliminação.",
-  "Baseie-se SOMENTE nos dados fornecidos. NÃO invente nomes de jogadores: só pode citar jogadores que aparecem na lista de cartões vermelhos reais.",
-  "Fora dessa lista, fale de setores (defesa, meio, ataque), fases do jogo e números — nunca invente nomes.",
+  "Baseie-se SOMENTE nos dados fornecidos. NÃO invente nomes de jogadores: só pode citar jogadores que aparecem na lista de INCIDENTES REAIS (pênaltis perdidos, cartões vermelhos).",
+  "O feed NÃO tem estatística de passes por jogador — é PROIBIDO acusar alguém de 'passes errados', 'muitos erros' ou qualquer métrica individual que não esteja nos incidentes reais.",
+  "Fora da lista de incidentes, fale de setores (defesa, meio, ataque), fases do jogo e números agregados — nunca invente nomes.",
 ].join(" ");
 
 function postMortemPrompt(input: BrazilPostMortemInput): string {
@@ -126,9 +127,9 @@ function postMortemPrompt(input: BrazilPostMortemInput): string {
     `Métricas da campanha:`,
     ...input.metricsSummary.map((l) => `- ${l}`),
     ``,
-    input.redCards.length
-      ? `Cartões vermelhos reais do Brasil no torneio:\n${input.redCards.map((r) => `- ${r}`).join("\n")}`
-      : `Sem cartões vermelhos do Brasil no torneio.`,
+    input.incidentsReais.length
+      ? `Incidentes negativos REAIS do Brasil (únicos nomes que você pode citar):\n${input.incidentsReais.map((r) => `- ${r}`).join("\n")}`
+      : `Nenhum incidente negativo nominal (vermelho/pênalti perdido) do Brasil registrado — não cite nomes.`,
   ].join("\n");
 }
 
