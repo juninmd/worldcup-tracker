@@ -24,6 +24,10 @@ export interface FotmobPlayerLine {
   goals: number;
   assists: number;
   xg: number | null;
+  // Ball-loss / duel metrics (Opta): perder a bola, ser driblado, perder duelo.
+  dispossessed: number | null;
+  dribbledPast: number | null;
+  duelsLost: number | null;
 }
 
 export interface FotmobMatchEval {
@@ -106,6 +110,9 @@ export async function fotmobEval(dateEvent: string, teamName: string, oppName: s
       goals: stat(p, "Goals")?.value ?? 0,
       assists: stat(p, "Assists")?.value ?? 0,
       xg: stat(p, "Expected goals (xG)")?.value ?? null,
+      dispossessed: stat(p, "Dispossessed")?.value ?? null,
+      dribbledPast: stat(p, "Dribbled past")?.value ?? null,
+      duelsLost: stat(p, "Duels lost")?.value ?? null,
     });
   }
   if (!players.length) return null;
@@ -131,16 +138,27 @@ export function fmtFotmobEval(ev: FotmobMatchEval): string {
   const rated = ev.players.filter((p) => p.rating !== null);
   const worst = rated.slice(0, 5);
   const best = rated.at(-1); // players are sorted worst→best, nulls excluded here
-  const passLine = (p: FotmobPlayerLine): string =>
-    p.passTotal ? ` · passes ${p.passOk}/${p.passTotal} (${p.passTotal - (p.passOk ?? 0)} errados)` : "";
+  const detail = (p: FotmobPlayerLine): string => {
+    const bits: string[] = [];
+    if (p.passTotal) bits.push(`passes ${p.passOk}/${p.passTotal} (${p.passTotal - (p.passOk ?? 0)} err)`);
+    if (p.dispossessed) bits.push(`perdeu a bola ${p.dispossessed}x`);
+    if (p.dribbledPast) bits.push(`driblado ${p.dribbledPast}x`);
+    if (p.duelsLost) bits.push(`${p.duelsLost} duelos perd.`);
+    return bits.length ? ` · ${bits.join(" · ")}` : "";
+  };
+  const mostDribbled = [...rated].sort((a, b) => (b.dribbledPast ?? 0) - (a.dribbledPast ?? 0))[0];
+  const mostDuelsLost = [...rated].sort((a, b) => (b.duelsLost ?? 0) - (a.duelsLost ?? 0))[0];
   return [
     `📈 *NOTAS DA PARTIDA (FotMob/Opta)* — ${ev.teamName} x ${ev.oppName}`,
     ev.teamRating !== null ? `Nota coletiva: ${ev.teamName} *${r1(ev.teamRating)}* x *${r1(ev.oppRating)}* ${ev.oppName}` : "",
     ``,
     `🔻 *Piores atuações do ${ev.teamName}:*`,
-    ...worst.map((p) => `• ${p.name} — nota *${r1(p.rating)}*${passLine(p)}`),
-    best ? `\n🔺 Melhor: ${best.name} — nota *${r1(best.rating)}*` : "",
-    `_Fonte: FotMob (dados Opta). Nota e passes não existem na API FIFA._`,
+    ...worst.map((p) => `• ${p.name} — nota *${r1(p.rating)}*${detail(p)}`),
+    ``,
+    mostDribbled?.dribbledPast ? `🥴 Mais desarmado (driblado): *${mostDribbled.name}* (${mostDribbled.dribbledPast}x)` : "",
+    mostDuelsLost?.duelsLost ? `💢 Mais perdeu duelos: *${mostDuelsLost.name}* (${mostDuelsLost.duelsLost})` : "",
+    best ? `🔺 Melhor: ${best.name} — nota *${r1(best.rating)}*` : "",
+    `_Fonte: FotMob (dados Opta). Nota, passes e perda de bola não existem na API FIFA._`,
   ].filter(Boolean).join("\n");
 }
 
@@ -148,7 +166,12 @@ export function fmtFotmobEval(ev: FotmobMatchEval): string {
  *  so "quem atrapalhou" can be named from actual ratings and wrong-pass counts. */
 export function fotmobPerformanceLines(ev: FotmobMatchEval): string[] {
   return ev.players.slice(0, 6).map((p) => {
-    const passes = p.passTotal ? `, ${p.passOk}/${p.passTotal} passes certos (${p.passTotal - (p.passOk ?? 0)} errados)` : "";
-    return `${p.name}: nota ${r1(p.rating)}${passes}${p.goals ? `, ${p.goals} gol(s)` : ""}`;
+    const bits: string[] = [];
+    if (p.passTotal) bits.push(`${p.passTotal - (p.passOk ?? 0)} passes errados de ${p.passTotal}`);
+    if (p.dispossessed) bits.push(`perdeu a bola ${p.dispossessed}x`);
+    if (p.dribbledPast) bits.push(`driblado ${p.dribbledPast}x`);
+    if (p.duelsLost) bits.push(`${p.duelsLost} duelos perdidos`);
+    if (p.goals) bits.push(`${p.goals} gol(s)`);
+    return `${p.name}: nota ${r1(p.rating)}${bits.length ? ` — ${bits.join(", ")}` : ""}`;
   });
 }
