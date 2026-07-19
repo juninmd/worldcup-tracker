@@ -25,6 +25,7 @@ import { fmtTournamentProjection, fmtTournamentSurprises, tournamentProjection }
 import { fmtSimulation, simulateKnockout } from "./simulate.ts";
 import { brazilMetrics, brazilNegativeIncidents, fmtBrazilMetrics } from "./brazil.ts";
 import { brazilFixtures } from "./sportsdb.ts";
+import { fmtFotmobEval, fotmobEval, fotmobPerformanceLines } from "./fotmob.ts";
 import { type BrazilPostMortemInput, brazilPostMortem, fmtBrazilPostMortem, fmtMatchPreview, postBracketOracle, previewMatch } from "./oracle.ts";
 import {
   championChartUrl,
@@ -208,12 +209,24 @@ async function postBrazilPostMortem(projection: Awaited<ReturnType<typeof tourna
   const opponent = isHome ? last.away : last.home;
   const bGoals = isHome ? last.prediction.homeGoals : last.prediction.awayGoals;
   const oGoals = isHome ? last.prediction.awayGoals : last.prediction.homeGoals;
+
+  // Real per-player ratings + wrong passes for the elimination match (FotMob/Opta) —
+  // lets us evaluate the game and name who dropped off, on real numbers.
+  const oppCanon = canonicalTeam(opponent);
+  const elimEvent = (await mergedSeasonEvents()).filter(isFinished).find((e) => {
+    const h = canonicalTeam(e.strHomeTeam), a = canonicalTeam(e.strAwayTeam);
+    return (h === "Brazil" && a === oppCanon) || (a === "Brazil" && h === oppCanon);
+  });
+  const fmEval = elimEvent ? await fotmobEval(elimEvent.dateEvent, "Brazil", opponent).catch(() => null) : null;
+  if (fmEval) await sendMessage(fmtFotmobEval(fmEval));
+
   const input: BrazilPostMortemInput = {
     eliminatedRound: last.round,
     eliminationScore: `${flag("Brazil")} Brasil ${bGoals}×${oGoals} ${opponent} ${flag(opponent)}`,
     opponent,
     metricsSummary: fmtBrazilMetrics(metrics).split("\n").slice(1),
     incidentsReais: await brazilNegativeIncidents(),
+    desempenho: fmEval ? fotmobPerformanceLines(fmEval) : [],
   };
   await sendMessage(fmtBrazilPostMortem(input, await brazilPostMortem(input)));
 }

@@ -199,7 +199,7 @@ export function evaluatedPredictionSnapshots(): EvaluatedPrediction[] {
 export type OperationalOutcome = "ok" | "cache" | "stale" | "error";
 export interface OperationalEvent {
   at: number;
-  subsystem: "fifa" | "telegram" | "poll";
+  subsystem: "fifa" | "telegram" | "poll" | "fotmob";
   operation: string;
   outcome: OperationalOutcome;
   latencyMs: number;
