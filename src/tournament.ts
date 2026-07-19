@@ -32,6 +32,10 @@ export interface TournamentProjection {
   knockout: ProjectedMatch[][];
   champion: string;
   brazilPath: ProjectedMatch[];
+  // Third-place play-off (FIFA match 103). Kept OUT of `knockout` so it never
+  // pollutes the bracket-tree wiring (chart edges pair rounds by index); surfaced
+  // on its own, rendered right before the Final.
+  thirdPlace?: ProjectedMatch;
 }
 
 // Likely-absent-regulars penalty per team (set once per projection run); makes
@@ -387,6 +391,31 @@ function brazilPathInKnockout(rounds: ProjectedMatch[][]): ProjectedMatch[] {
   return path;
 }
 
+// The bronze-medal match (FIFA match 103) between the two beaten semifinalists.
+// Built only once both sides are real teams, so we never render "RU101 vs RU102".
+function buildThirdPlace(
+  events: WcEvent[],
+  table: Record<string, number>,
+  history: WcEvent[],
+): ProjectedMatch | undefined {
+  const e = events.find((ev) => {
+    const text = `${ev.strStage ?? ""} ${ev.strEvent} ${ev.strPlaceHolderA ?? ""} ${ev.strPlaceHolderB ?? ""}`;
+    return matchNo(ev) === 103 || /third[ -]?place|bronze|play-?off for third|RU10[12]/i.test(text);
+  });
+  if (!e) return undefined;
+  if (isPlaceholder(e.strHomeTeam) || isPlaceholder(e.strAwayTeam)) return undefined;
+  if (!e.strHomeTeam || e.strHomeTeam === "TBD" || !e.strAwayTeam || e.strAwayTeam === "TBD") return undefined;
+  const home = canonicalTeam(e.strHomeTeam);
+  const away = canonicalTeam(e.strAwayTeam);
+  const predicted = predictWithAbsences(table, home, away, history);
+  const hs = Number(e.intHomeScore), as = Number(e.intAwayScore);
+  const hasRealScore = !Number.isNaN(hs) && !Number.isNaN(as);
+  const real = isFinished(e) && hasRealScore;
+  const pred = real ? { ...predicted, homeGoals: hs, awayGoals: as } : predicted;
+  const win = real ? realWinner(e, home, away, table, pred) : winner(home, away, pred, table);
+  return { round: "Disputa de 3º lugar", home, away, prediction: pred, winner: win, real };
+}
+
 export async function tournamentProjection(): Promise<TournamentProjection> {
   const all = await mergedSeasonEvents();
   const finished = all.filter(isFinished);
@@ -409,9 +438,10 @@ export async function tournamentProjection(): Promise<TournamentProjection> {
   const knockout = fifaBracket ?? buildHeuristicBracket(groups, thirds, table, all);
   const champion = selectTournamentChampion(knockout, qualifiers[0]?.team ?? "indefinido");
   const brazilPath = brazilPathInKnockout(knockout);
+  const thirdPlace = buildThirdPlace(all, table, all);
   return {
     generatedAt: new Date().toISOString(), bracketSource: fifaBracket ? "fifa" : "heuristic-fallback",
-    groups, qualifiers, knockout, champion, brazilPath,
+    groups, qualifiers, knockout, champion, brazilPath, thirdPlace,
   };
 }
 
@@ -461,6 +491,55 @@ const pct = (p: number) => `${Math.round(p * 100)}%`;
 function probBar(p: number, width = 10): string {
   const filled = Math.round(p * width);
   return "█".repeat(filled) + "░".repeat(width - filled);
+}
+
+// ── Surprises vs disappointments: pre-tournament FIFA seed vs how far a team
+//    actually went in the knockout. Judged only from real results, so it stays
+//    silent until enough of the bracket is decided. Scope = knockout stage.
+const KO_DEPTH: Record<string, number> = {
+  "Rodada de 32": 1, "Oitavas": 2, "Quartas": 3, "Semifinal": 4, "Final": 5,
+};
+const GOT_LABEL = ["fase de grupos", "Rodada de 32", "Oitavas", "Quartas", "Semifinal", "vice (final)", "campeão"];
+const EXP_LABEL = ["", "Rodada de 32", "Oitavas", "Quartas", "Semifinal", "final"];
+const expectedDepth = (rank: number): number => rank <= 2 ? 5 : rank <= 8 ? 4 : rank <= 16 ? 3 : rank <= 24 ? 2 : 1;
+
+export function fmtTournamentSurprises(p: TournamentProjection): string | null {
+  const realMatches = p.knockout.flat().filter((m) => m.real);
+  if (realMatches.length < 4) return null; // too early to judge
+  const bestRank = new Map<string, number>();
+  const reached = new Map<string, number>();
+  for (const m of realMatches) {
+    const d = KO_DEPTH[m.round] ?? 0;
+    for (const [team, rank] of [
+      [canonicalTeam(m.home), m.prediction.fifaRankHome],
+      [canonicalTeam(m.away), m.prediction.fifaRankAway],
+    ] as const) {
+      const advanced = canonicalTeam(m.winner) === team;
+      reached.set(team, Math.min(6, Math.max(reached.get(team) ?? 0, advanced ? d + 1 : d)));
+      if (rank !== undefined) {
+        const cur = bestRank.get(team);
+        if (cur === undefined || rank < cur) bestRank.set(team, rank);
+      }
+    }
+  }
+  const rows = [...reached.entries()].map(([team, got]) => {
+    const rank = bestRank.get(team);
+    const exp = rank ? expectedDepth(rank) : 1;
+    return { team, got, exp, delta: got - exp, rank };
+  });
+  const surprises = rows.filter((r) => r.delta > 0).sort((a, b) => b.delta - a.delta || (a.rank ?? 99) - (b.rank ?? 99)).slice(0, 3);
+  const flops = rows.filter((r) => r.delta < 0).sort((a, b) => a.delta - b.delta || (a.rank ?? 99) - (b.rank ?? 99)).slice(0, 3);
+  if (!surprises.length && !flops.length) return null;
+  const line = (r: (typeof rows)[number], emoji: string) =>
+    `${emoji} ${flag(r.team)} *${r.team}*${r.rank ? ` (FIFA #${r.rank})` : ""} — chegou às *${GOT_LABEL[r.got]}*, esperado ~${EXP_LABEL[r.exp]}`;
+  const out = [
+    `📊 *SURPRESAS x DECEPÇÕES — mata-mata*`,
+    `_Ranking FIFA (${FIFA_RANK_AS_OF}) pré-Copa vs. até onde cada seleção chegou de fato._`,
+    ``,
+  ];
+  if (surprises.length) { out.push(`🚀 *Surpreenderam:*`, ...surprises.map((r) => line(r, "▲"))); }
+  if (flops.length) { out.push(``, `💤 *Decepcionaram:*`, ...flops.map((r) => line(r, "▼"))); }
+  return out.join("\n");
 }
 
 // One-line match summary showing score prediction + winner probability.
@@ -530,6 +609,13 @@ export function fmtTournamentProjection(p: TournamentProjection): string {
   lines.push(`*Mata-mata — chaveamento*  _(✅ resultado real · 🔮 projeção)_`);
   for (const round of p.knockout) {
     const rName = round[0]?.round ?? "Rodada";
+    // The bronze match is played before the final — surface it right here.
+    if (rName === "Final" && p.thirdPlace) {
+      const t = p.thirdPlace;
+      const tag = t.real ? "✅" : "🔮";
+      lines.push(`\n*🥉 Disputa de 3º lugar*`);
+      lines.push(`  ${tag} ${flag(t.home)} ${t.home} ${t.prediction.homeGoals}×${t.prediction.awayGoals} ${t.away} ${flag(t.away)} → *${t.winner}* 🥉`);
+    }
     lines.push(`\n*${rName}*`);
     const limit = rName === "Rodada de 32" ? 8 : round.length;
     for (const m of round.slice(0, limit)) {

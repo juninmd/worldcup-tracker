@@ -143,6 +143,24 @@ export function calculateBrazilMetrics(inputs: BrazilMatchMetricInput[]): Brazil
   return result;
 }
 
+/** Real red cards shown to Brazil players in the tournament — the only player-name
+ *  facts we let the post-mortem cite (everything else stays sector-level). */
+export async function brazilRedCards(): Promise<string[]> {
+  const matches = (await mergedSeasonEvents())
+    .filter(isFinished)
+    .filter((event) => isBrazil(event.strHomeTeam) || isBrazil(event.strAwayTeam));
+  const out: string[] = [];
+  for (const event of matches) {
+    const opponent = isBrazil(event.strHomeTeam) ? event.strAwayTeam : event.strHomeTeam;
+    for (const card of await cardEvents(event.idEvent)) {
+      if (card.cardType === "red" && isBrazil(card.strTeam)) {
+        out.push(`${card.strPlayer ?? "jogador não identificado"} (${card.intTime}') vs ${opponent}`);
+      }
+    }
+  }
+  return out;
+}
+
 const statNumber = (value: string | null): number => Number.parseFloat(value ?? "0") || 0;
 
 export async function brazilMetrics(): Promise<BrazilMetrics> {

@@ -93,6 +93,78 @@ export async function postBracketOracle(p: TournamentProjection, sim: SimResult)
   await sendMessage(fmtBracketOracle(await bracketOracle(p, sim)));
 }
 
+// ── Brazil post-mortem: why the Seleção went out, grounded in real metrics ──
+
+export interface BrazilPostMortemInput {
+  eliminatedRound: string;
+  eliminationScore: string; // "Brasil 1×2 Croácia"
+  opponent: string;
+  metricsSummary: string[]; // pre-formatted data lines (xG, conversão, disciplina…)
+  redCards: string[];       // real red-card incidents: "Player (min') vs Opponent"
+}
+
+const BrazilPostMortemSchema = z.object({
+  diagnostico: z.string().describe("2 a 4 frases: por que o Brasil caiu, ancorado nos números fornecidos, em português do Brasil."),
+  ondeErrou: z.array(z.string()).min(2).max(4).describe("Pontos concretos de erro (setor, fase do jogo, conversão de chances) — sem inventar nomes de jogadores."),
+  deveriaMelhorar: z.array(z.string()).min(2).max(3).describe("Recomendações concretas do que deveria ter sido melhor."),
+  quemAtrapalhou: z.string().describe("O fator que mais pesou negativamente. Só cite jogador por NOME se ele constar na lista de cartões vermelhos reais fornecida; caso contrário, fale do setor/função."),
+});
+
+export type BrazilPostMortem = z.infer<typeof BrazilPostMortemSchema>;
+
+const POSTMORTEM_SYSTEM = [
+  "Você é um analista tático do futebol brasileiro, escrevendo em português do Brasil, crítico e direto.",
+  "Recebe métricas REAIS da campanha do Brasil na Copa 2026 (derivadas do feed oficial FIFA) e faz um post-mortem da eliminação.",
+  "Baseie-se SOMENTE nos dados fornecidos. NÃO invente nomes de jogadores: só pode citar jogadores que aparecem na lista de cartões vermelhos reais.",
+  "Fora dessa lista, fale de setores (defesa, meio, ataque), fases do jogo e números — nunca invente nomes.",
+].join(" ");
+
+function postMortemPrompt(input: BrazilPostMortemInput): string {
+  return [
+    `Eliminação: ${input.eliminationScore} nas ${input.eliminatedRound} (adversário: ${input.opponent}).`,
+    ``,
+    `Métricas da campanha:`,
+    ...input.metricsSummary.map((l) => `- ${l}`),
+    ``,
+    input.redCards.length
+      ? `Cartões vermelhos reais do Brasil no torneio:\n${input.redCards.map((r) => `- ${r}`).join("\n")}`
+      : `Sem cartões vermelhos do Brasil no torneio.`,
+  ].join("\n");
+}
+
+export async function brazilPostMortem(input: BrazilPostMortemInput): Promise<BrazilPostMortem> {
+  const completion = await client().chat.completions.parse({
+    model: LITELLM_MODEL,
+    max_tokens: 4096,
+    messages: [
+      { role: "system", content: POSTMORTEM_SYSTEM },
+      { role: "user", content: postMortemPrompt(input) },
+    ],
+    response_format: zodResponseFormat(BrazilPostMortemSchema, "brazil_post_mortem"),
+  });
+  const parsed = completion.choices[0]?.message.parsed;
+  if (!parsed) throw new Error("LiteLLM did not return a parseable Brazil post-mortem");
+  return parsed;
+}
+
+export function fmtBrazilPostMortem(input: BrazilPostMortemInput, o: BrazilPostMortem): string {
+  return [
+    `🇧🇷 *POST-MORTEM DA SELEÇÃO — Copa 2026 (IA + dados)*`,
+    `❌ Eliminado nas *${input.eliminatedRound}*: ${input.eliminationScore}`,
+    ``,
+    o.diagnostico,
+    ``,
+    `🔧 *Onde errou:*`,
+    ...o.ondeErrou.map((e) => `• ${e}`),
+    ``,
+    `📈 *O que deveria ter melhorado:*`,
+    ...o.deveriaMelhorar.map((e) => `• ${e}`),
+    ``,
+    `⚠️ *Quem/o que mais atrapalhou:* ${o.quemAtrapalhou}`,
+    `_Métricas derivadas do feed oficial FIFA; nomes só quando ancorados em incidentes reais._`,
+  ].join("\n");
+}
+
 // ── Pre-match oracle: qualitative evaluation of a fixture before kickoff ──
 
 const MatchPreviewSchema = z.object({

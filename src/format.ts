@@ -25,6 +25,16 @@ const FLAGS: Record<string, string> = {
 export const flag = (t: string) => FLAGS[t] ?? "⚽";
 export const pct = (p: number) => `${Math.round(p * 100)}%`;
 
+// Next FIFA World Cup after 2026: 2030 — centenary opener on 8 Jun 2030 (Uruguay),
+// main tournament in Spain/Portugal/Morocco. Used for the post-tournament countdown.
+const NEXT_WORLD_CUP = { label: "Copa do Mundo 2030 🇪🇸🇵🇹🇲🇦", firstMatchUtc: "2030-06-08T00:00:00Z" };
+export function daysToNextWorldCup(from = new Date()): number {
+  return Math.max(0, Math.ceil((new Date(NEXT_WORLD_CUP.firstMatchUtc).getTime() - from.getTime()) / 86_400_000));
+}
+export function nextWorldCupLine(from = new Date()): string {
+  return `⏳ *Faltam ${daysToNextWorldCup(from).toLocaleString("pt-BR")} dias* para a ${NEXT_WORLD_CUP.label} — 1º jogo em 08/06/2030.`;
+}
+
 // Unicode probability bar: `pHome | pDraw | pAway` visualised in 30 chars total.
 function oddsBar(pHome: number, pDraw: number, pAway: number): string {
   const W = 20;
@@ -233,10 +243,41 @@ export function fmtFulltime(e: WcEvent, p: Prediction, scorers: TimelineItem[]):
   ].filter(Boolean).join("\n");
 }
 
+const FINISHED_STATUS = new Set(["FT", "AET", "PEN", "MATCH FINISHED"]);
+const eventMs = (e: WcEvent): number => parseUtc(e.strTimestamp)?.getTime() ?? new Date(e.dateEvent).getTime();
+
+/** Post-World-Cup "keep following the Seleção" block: Brazil's upcoming friendlies
+ *  and its latest results, from the FIFA calendar (non-WC competitions). */
+export function fmtBrazilFriendlies(events: WcEvent[], now = new Date()): string | null {
+  if (!events.length) return null;
+  const nowMs = now.getTime();
+  const finished = (e: WcEvent) => FINISHED_STATUS.has((e.strStatus ?? "").toUpperCase());
+  const upcoming = events
+    .filter((e) => !finished(e) && eventMs(e) >= nowMs - 3 * 3_600_000)
+    .sort((a, b) => eventMs(a) - eventMs(b))
+    .slice(0, 4);
+  const recent = events.filter(finished).sort((a, b) => eventMs(b) - eventMs(a)).slice(0, 3);
+  if (!upcoming.length && !recent.length) return null;
+  const lines = [`🇧🇷 *AGENDA DA SELEÇÃO — amistosos e outros jogos*`];
+  if (upcoming.length) {
+    lines.push(`*Próximos:*`);
+    for (const e of upcoming) {
+      lines.push(`• ${kickoff(e)} ${flag(e.strHomeTeam)} ${e.strHomeTeam} x ${e.strAwayTeam} ${flag(e.strAwayTeam)}`);
+    }
+  }
+  if (recent.length) {
+    lines.push(`*Últimos resultados:*`);
+    for (const e of recent) {
+      lines.push(`• ${flag(e.strHomeTeam)} ${e.strHomeTeam} ${e.intHomeScore ?? "-"}–${e.intAwayScore ?? "-"} ${e.strAwayTeam} ${flag(e.strAwayTeam)}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 export function fmtDailyMenu(
   date: string, today: WcEvent[], preds: Map<string, Prediction>,
   recent: WcEvent[], champ: ChampionOdds[], scorers: Scorer[] = [],
-  brazilPath: ProjectedMatch[] = [],
+  brazilPath: ProjectedMatch[] = [], extraSections: (string | null)[] = [],
 ): string {
   const day = today.length
     ? today.map((e) => {
@@ -297,5 +338,6 @@ export function fmtDailyMenu(
     `*Últimos resultados:*`, last, ``,
     `⚽️ *Artilheiros:*`, art, ``,
     `🏆 *Favoritos ao título (Monte Carlo + chave atual):*`, odds,
+    ...extraSections.flatMap((s) => (s ? ["", s] : [])),
   ].filter((x) => x !== null).join("\n");
 }

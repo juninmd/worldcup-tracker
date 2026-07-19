@@ -211,6 +211,25 @@ export async function seasonEvents(): Promise<WcEvent[]> {
   return (await fifaMatches()).map(mapFifaMatch);
 }
 
+export const BRAZIL_ID_TEAM = "43924";
+
+/** Brazil's non-World-Cup fixtures (friendlies, qualifiers) from the official FIFA
+ *  calendar within a date window — so the bot keeps following the Seleção after the
+ *  Cup. World Cup matches (competition 17) are excluded; that's what the tracker
+ *  already covers. `from`/`to` are ISO instants (…Z). */
+export async function brazilFixtures(fromIso: string, toIso: string): Promise<WcEvent[]> {
+  // FIFA's calendar silently ignores the window (and dumps historical matches) if the
+  // instant carries milliseconds. Use plain YYYY-MM-DD — colon-free, so fetch's URL
+  // normalisation can't mangle it either.
+  const day = (iso: string) => iso.slice(0, 10);
+  const path = `/calendar/matches?idTeam=${BRAZIL_ID_TEAM}&from=${day(fromIso)}&to=${day(toIso)}&count=30`;
+  const d = await getJson<FifaMatchesResponse | null>(`fifa:${path}`, `${FIFA_BASE}${path}`).catch(() => null);
+  return (d?.Results ?? [])
+    .filter((m) => m.IdCompetition !== FIFA_COMPETITION_ID)
+    .map(mapFifaMatch)
+    .sort((a, b) => (a.strTimestamp ?? a.dateEvent).localeCompare(b.strTimestamp ?? b.dateEvent));
+}
+
 export async function eventsOnDate(date: string): Promise<WcEvent[]> {
   return (await seasonEvents()).filter((e) => e.dateEvent === date);
 }

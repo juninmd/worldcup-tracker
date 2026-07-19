@@ -4,6 +4,7 @@ import type { TableRow, IntensityBucket } from "./types.ts";
 import type { TournamentProjection } from "./tournament.ts";
 import type { ChampionOdds } from "./champion.ts";
 import { byGroup, qualificationStatuses } from "./standings.ts";
+import { flag } from "./format.ts";
 
 // QuickChart renders Chart.js configs to a PNG with no API key — used to turn
 // the standings/scorers tables into shareable card images.
@@ -290,7 +291,7 @@ export function tournamentCircleChartUrl(p: TournamentProjection): string | null
     'graph [layout=twopi, root=champ, ranksep=2.2, overlap=false, splines=true, bgcolor=white];',
     'node [shape=ellipse, style=filled, fontname="Arial", fontsize=13, fillcolor="#eff6ff", color="#2563eb"];',
     'edge [color="#93c5fd", arrowhead=none];',
-    `champ [label="CAMPEÃO\\n${esc(p.champion)}", shape=doublecircle, fillcolor="#fde68a", color="#f59e0b", fontsize=16];`,
+    `champ [label="CAMPEÃO\\n${flag(p.champion)} ${esc(p.champion)}", shape=doublecircle, fillcolor="#fde68a", color="#f59e0b", fontsize=16];`,
   ];
   for (const [ri, round] of rounds.entries()) {
     for (const [mi, m] of round.entries()) {
@@ -299,7 +300,7 @@ export function tournamentCircleChartUrl(p: TournamentProjection): string | null
       const fill = hasBrazil ? "#fde047" : m.real ? "#dcfce7" : "#eff6ff";
       const border = hasBrazil ? ', color="#16a34a", penwidth=2' : "";
       const pens = !m.real && m.prediction.homeGoals === m.prediction.awayGoals ? " (pên.)" : "";
-      const label = `${esc(m.home)} ${m.prediction.homeGoals}×${m.prediction.awayGoals} ${esc(m.away)}\\n${esc(m.winner)}${pens}`;
+      const label = `${flag(m.home)} ${esc(m.home)} ${m.prediction.homeGoals}×${m.prediction.awayGoals} ${esc(m.away)} ${flag(m.away)}\\n${flag(m.winner)} ${esc(m.winner)}${pens}`;
       lines.push(`m${ri}_${mi} [label="${label}", fillcolor="${fill}"${border}];`);
     }
   }
@@ -329,7 +330,7 @@ export function tournamentFlameChartUrl(p: TournamentProjection): string | null 
     lines.push(`{ rank=same; r${ri} [shape=plain, label="${esc(round[0]?.round ?? "Rodada")}"];`);
     for (const [mi, m] of round.entries()) {
       const fill = m.winner === p.champion ? "#fee2e2" : "#fff7ed";
-      const label = `${m.home} ${m.prediction.homeGoals} x ${m.prediction.awayGoals} ${m.away}\\n→ ${m.winner}`;
+      const label = `${flag(m.home)} ${m.home} ${m.prediction.homeGoals} x ${m.prediction.awayGoals} ${m.away} ${flag(m.away)}\\n→ ${flag(m.winner)} ${m.winner}`;
       lines.push(`m${ri}_${mi} [label="${esc(label)}", fillcolor="${fill}"];`);
     }
     lines.push("}");

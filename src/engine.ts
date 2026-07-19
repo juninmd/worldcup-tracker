@@ -3,7 +3,7 @@ import { eventsOnDate, findPlayer, findPlayerById, isFinished, isLive, mergedSea
 import { trainRatings, outcomeOf } from "./elo.ts";
 import { calibrateGoals, predictMatch } from "./predict.ts";
 import { bracketAwareChampionForecast, championForecast } from "./champion.ts";
-import { fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag, isUpset, kickoff, parseUtc } from "./format.ts";
+import { fmtBrazilFriendlies, fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag, isUpset, kickoff, nextWorldCupLine, parseUtc } from "./format.ts";
 import { sendMediaGroup, sendMessage, sendPhoto, sendPhotoStrict } from "./telegram.ts";
 import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
@@ -21,9 +21,11 @@ import { canonicalTeam } from "./elo.ts";
 import { postStandings } from "./standings.ts";
 import { eventDetail, eventStats, eventsByDay, lineup } from "./sportsdb.ts";
 import { writeFile } from "node:fs/promises";
-import { fmtTournamentProjection, tournamentProjection } from "./tournament.ts";
+import { fmtTournamentProjection, fmtTournamentSurprises, tournamentProjection } from "./tournament.ts";
 import { fmtSimulation, simulateKnockout } from "./simulate.ts";
-import { fmtMatchPreview, postBracketOracle, previewMatch } from "./oracle.ts";
+import { brazilMetrics, brazilRedCards, fmtBrazilMetrics } from "./brazil.ts";
+import { brazilFixtures } from "./sportsdb.ts";
+import { type BrazilPostMortemInput, brazilPostMortem, fmtBrazilPostMortem, fmtMatchPreview, postBracketOracle, previewMatch } from "./oracle.ts";
 import {
   championChartUrl,
   formChartUrl,
@@ -87,7 +89,17 @@ export async function postDailyMenu(date: string): Promise<void> {
       : `📅 Jogos de hoje — ${date}`;
     await sendPhoto(cover, caption);
   }
-  await sendMessage(fmtDailyMenu(date, today, preds, recent, champ, await topScorers(), projection.brazilPath));
+  // Post-tournament extras: countdown to the next World Cup once the final is
+  // decided, and the Seleção's upcoming friendlies (kept following after the Cup).
+  const finalRound = projection.knockout.at(-1);
+  const tournamentOver = finalRound?.[0]?.round === "Final" && !!finalRound[0]?.real;
+  const nextCup = tournamentOver ? nextWorldCupLine() : null;
+  const now = Date.now();
+  const friendlies = await brazilFixtures(
+    new Date(now - 30 * 86_400_000).toISOString(),
+    new Date(now + 400 * 86_400_000).toISOString(),
+  ).then((events) => fmtBrazilFriendlies(events)).catch(() => null);
+  await sendMessage(fmtDailyMenu(date, today, preds, recent, champ, await topScorers(), projection.brazilPath, [nextCup, friendlies]));
 
   // Each of these is a self-contained "bonus" broadcast — a transient failure in
   // one (a flaky fetch, a Telegram hiccup) must not swallow the rest of the menu.
@@ -165,6 +177,14 @@ export async function postTournamentProjection(pre?: Awaited<ReturnType<typeof t
   if (chart) await sendPhoto(chart, `🔥 Chama da Copa 2026 — campeão previsto: ${projection.champion}`);
   await sendMessage(fmtTournamentProjection(projection));
 
+  // Who over/under-performed vs their FIFA seed (silent until the KO is decided).
+  const surprises = fmtTournamentSurprises(projection);
+  if (surprises) await sendMessage(surprises);
+
+  // Brazil eliminated → data-grounded post-mortem (best-effort: LLM may be down).
+  await postBrazilPostMortem(projection).catch((err) =>
+    console.error("brazil post-mortem failed:", (err as Error).message));
+
   const { all, table } = await ratingsNow();
   const sim = simulateKnockout(projection, table, all);
   if (sim) {
@@ -175,6 +195,27 @@ export async function postTournamentProjection(pre?: Awaited<ReturnType<typeof t
     await postBracketOracle(projection, sim).catch((err) =>
       console.error("bracket oracle failed:", (err as Error).message));
   }
+}
+
+/** Post-match autopsy of Brazil's campaign, posted once the Seleção is eliminated.
+ *  Numbers come from real FIFA-derived metrics; the LLM only narrates them. */
+async function postBrazilPostMortem(projection: Awaited<ReturnType<typeof tournamentProjection>>): Promise<void> {
+  const last = projection.brazilPath.at(-1);
+  if (!last || !last.real || canonicalTeam(last.winner) === "Brazil") return; // still alive / no data
+  const metrics = await brazilMetrics();
+  if (!metrics.played) return;
+  const isHome = canonicalTeam(last.home) === "Brazil";
+  const opponent = isHome ? last.away : last.home;
+  const bGoals = isHome ? last.prediction.homeGoals : last.prediction.awayGoals;
+  const oGoals = isHome ? last.prediction.awayGoals : last.prediction.homeGoals;
+  const input: BrazilPostMortemInput = {
+    eliminatedRound: last.round,
+    eliminationScore: `${flag("Brazil")} Brasil ${bGoals}×${oGoals} ${opponent} ${flag(opponent)}`,
+    opponent,
+    metricsSummary: fmtBrazilMetrics(metrics).split("\n").slice(1),
+    redCards: await brazilRedCards(),
+  };
+  await sendMessage(fmtBrazilPostMortem(input, await brazilPostMortem(input)));
 }
 
 /** Best available event artwork to use as a visual cover. */
