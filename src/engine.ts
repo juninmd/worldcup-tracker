@@ -54,6 +54,17 @@ const onlyGoals = (tl: TimelineItem[]) =>
   tl.filter((t) => /goal/i.test(t.strTimeline) && !/missed|disallow/i.test(t.strTimelineDetail ?? ""));
 
 export async function postDailyMenu(date: string): Promise<void> {
+  // The World Cup runs every 4 years: once the final is a real result, every
+  // match-day broadcast below (cover, champion odds, projected bracket, charts,
+  // and the 9 bonus sections) is stale and just spams the channel about a Cup
+  // that already ended. Short-circuit to a lightweight countdown + Seleção agenda.
+  const projection = await tournamentProjection();
+  const finalRound = projection.knockout.at(-1);
+  const tournamentOver = finalRound?.[0]?.round === "Final" && !!finalRound[0]?.real;
+  if (tournamentOver) {
+    await postPostTournamentDigest();
+    return;
+  }
   const { all, table } = await ratingsNow();
   // The free-tier season feed lags the real schedule (often days behind), so the
   // day feed is the source of truth for "what's on today" — it also carries live
@@ -76,7 +87,6 @@ export async function postDailyMenu(date: string): Promise<void> {
   const recent = all.filter(isFinished)
     .sort((a, b) => (b.strTimestamp ?? "").localeCompare(a.strTimestamp ?? ""));
   const teams = [...new Set(all.flatMap((e) => [e.strHomeTeam, e.strAwayTeam]))];
-  const projection = await tournamentProjection();
   const simulation = simulateKnockout(projection, table, all);
   const champ = bracketAwareChampionForecast(championForecast(table, teams), simulation?.title ?? null);
   // Headline an actual game still to come today, not one that already finished
@@ -90,17 +100,15 @@ export async function postDailyMenu(date: string): Promise<void> {
       : `📅 Jogos de hoje — ${date}`;
     await sendPhoto(cover, caption);
   }
-  // Post-tournament extras: countdown to the next World Cup once the final is
-  // decided, and the Seleção's upcoming friendlies (kept following after the Cup).
-  const finalRound = projection.knockout.at(-1);
-  const tournamentOver = finalRound?.[0]?.round === "Final" && !!finalRound[0]?.real;
-  const nextCup = tournamentOver ? nextWorldCupLine() : null;
+  // The Seleção's upcoming friendlies (kept following even mid-Cup). The
+  // countdown to the next World Cup lives in the post-tournament digest, which
+  // fully replaces this menu once the final is decided (see the guard above).
   const now = Date.now();
   const friendlies = await brazilFixtures(
     new Date(now - 30 * 86_400_000).toISOString(),
     new Date(now + 400 * 86_400_000).toISOString(),
   ).then((events) => fmtBrazilFriendlies(events)).catch(() => null);
-  await sendMessage(fmtDailyMenu(date, today, preds, recent, champ, await topScorers(), projection.brazilPath, [nextCup, friendlies]));
+  await sendMessage(fmtDailyMenu(date, today, preds, recent, champ, await topScorers(), projection.brazilPath, [friendlies]));
 
   // Each of these is a self-contained "bonus" broadcast — a transient failure in
   // one (a flaky fetch, a Telegram hiccup) must not swallow the rest of the menu.
@@ -122,6 +130,18 @@ export async function postDailyMenu(date: string): Promise<void> {
       console.error(`daily menu section "${label}" failed:`, (err as Error).message);
     }
   }
+}
+
+/** Once the Cup is decided there's nothing to preview — it only runs every 4
+ *  years. Keep a lightweight daily touch: the countdown to the next World Cup
+ *  plus the Seleção's agenda (friendlies/other games) when there's something on. */
+async function postPostTournamentDigest(): Promise<void> {
+  const now = Date.now();
+  const friendlies = await brazilFixtures(
+    new Date(now - 30 * 86_400_000).toISOString(),
+    new Date(now + 400 * 86_400_000).toISOString(),
+  ).then((events) => fmtBrazilFriendlies(events)).catch(() => null);
+  await sendMessage([nextWorldCupLine(), friendlies].filter(Boolean).join("\n\n"));
 }
 
 /** Last-N results per team (most recent first), from finished matches. */
