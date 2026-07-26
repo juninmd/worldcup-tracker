@@ -30,6 +30,9 @@ export interface WcEvent {
   intAwayPenaltyScore?: string | null;
   strVenue: string | null;
   strLeague: string;
+  /** FIFA competition id — the only reliable way to tell a World Cup match from a
+   *  qualifier or a friendly, since strLeague is a fixed label. */
+  idCompetition?: string | null;
   strStage?: string | null;
   strPlaceHolderA?: string | null;
   strPlaceHolderB?: string | null;

@@ -237,6 +237,13 @@ switch (cmd) {
     console.log(fmtModelMetrics(evaluatePredictions(buildLeakFreeBacktest(all))));
     break;
   }
+  case "2030":
+  case "ciclo": {
+    const { cycle2030, postCycle2030 } = await import("./cycle2030.ts");
+    if (rest[0] === "--send") { await postCycle2030(); console.log("2030 cycle sent."); break; }
+    console.log(await cycle2030());
+    break;
+  }
   case "brazil":
   case "brasil": {
     console.log(fmtBrazilMetrics(await brazilMetrics()));
@@ -248,6 +255,6 @@ switch (cmd) {
     break;
   }
   default:
-    console.log("commands: menu [date] | track | homologate [date|forecast|full|telegram-dry-run] [--send] | predict <H> <A> | champion | forecast [--send] | metrics | brazil | status | scorers [--send] | cards [--send] | venues [--send] | squad <team> [--send] | trivia [--send] | goaltimes [--send] | live [--send] | highlights [--send] | h2h <A> <B> [--send] | streaks [--send] | confederations [--send] | info [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send]");
+    console.log("commands: menu [date] | track | homologate [date|forecast|full|telegram-dry-run] [--send] | predict <H> <A> | champion | forecast [--send] | metrics | brazil | 2030 [--send] | status | scorers [--send] | cards [--send] | venues [--send] | squad <team> [--send] | trivia [--send] | goaltimes [--send] | live [--send] | highlights [--send] | h2h <A> <B> [--send] | streaks [--send] | confederations [--send] | info [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send]");
     console.log("merged events:", (await mergedSeasonEvents()).length);
 }

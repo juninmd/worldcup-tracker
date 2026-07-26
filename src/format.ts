@@ -26,8 +26,9 @@ export const flag = (t: string) => FLAGS[t] ?? "⚽";
 export const pct = (p: number) => `${Math.round(p * 100)}%`;
 
 // Next FIFA World Cup after 2026: 2030 — centenary opener on 8 Jun 2030 (Uruguay),
-// main tournament in Spain/Portugal/Morocco. Used for the post-tournament countdown.
-const NEXT_WORLD_CUP = { label: "Copa do Mundo 2030 🇪🇸🇵🇹🇲🇦", firstMatchUtc: "2030-06-08T00:00:00Z" };
+// main tournament in Spain/Portugal/Morocco. Used for the post-tournament countdown;
+// the full cycle roadmap built on top of it lives in cycle2030.ts.
+export const NEXT_WORLD_CUP = { label: "Copa do Mundo 2030 🇪🇸🇵🇹🇲🇦", firstMatchUtc: "2030-06-08T00:00:00Z" };
 export function daysToNextWorldCup(from = new Date()): number {
   return Math.max(0, Math.ceil((new Date(NEXT_WORLD_CUP.firstMatchUtc).getTime() - from.getTime()) / 86_400_000));
 }

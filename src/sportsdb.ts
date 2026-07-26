@@ -179,6 +179,7 @@ export function mapFifaMatch(match: FifaMatch): WcEvent {
     intAwayPenaltyScore: match.AwayTeamPenaltyScore === null || match.AwayTeamPenaltyScore === undefined ? null : String(match.AwayTeamPenaltyScore),
     strVenue: text(match.Stadium?.Name),
     strLeague: "FIFA World Cup",
+    idCompetition: match.IdCompetition ?? null,
     strStage: text(match.StageName) || null,
     strPlaceHolderA: match.PlaceHolderA ?? null,
     strPlaceHolderB: match.PlaceHolderB ?? null,
@@ -226,6 +227,19 @@ export async function brazilFixtures(fromIso: string, toIso: string): Promise<Wc
   const d = await getJson<FifaMatchesResponse | null>(`fifa:${path}`, `${FIFA_BASE}${path}`).catch(() => null);
   return (d?.Results ?? [])
     .filter((m) => m.IdCompetition !== FIFA_COMPETITION_ID)
+    .map(mapFifaMatch)
+    .sort((a, b) => (a.strTimestamp ?? a.dateEvent).localeCompare(b.strTimestamp ?? b.dateEvent));
+}
+
+/** Every match of a competition inside a date window. The window alone identifies the
+ *  cycle — no idSeason needed — so this keeps working when FIFA publishes the 2030
+ *  qualifiers under a new season id. Returns [] while a cycle is unpublished: the feed
+ *  answers a bare `null` body for empty windows, which getJson surfaces as null. */
+export async function competitionFixtures(idCompetition: string, fromIso: string, toIso: string): Promise<WcEvent[]> {
+  const day = (iso: string) => iso.slice(0, 10);
+  const path = `/calendar/matches?idCompetition=${idCompetition}&from=${day(fromIso)}&to=${day(toIso)}&count=200`;
+  const d = await getJson<FifaMatchesResponse | null>(`fifa:${path}`, `${FIFA_BASE}${path}`).catch(() => null);
+  return (d?.Results ?? [])
     .map(mapFifaMatch)
     .sort((a, b) => (a.strTimestamp ?? a.dateEvent).localeCompare(b.strTimestamp ?? b.dateEvent));
 }

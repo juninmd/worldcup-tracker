@@ -25,6 +25,7 @@ import { fmtTournamentProjection, fmtTournamentSurprises, tournamentProjection }
 import { fmtSimulation, simulateKnockout } from "./simulate.ts";
 import { brazilMetrics, brazilNegativeIncidents, fmtBrazilMetrics } from "./brazil.ts";
 import { brazilFixtures } from "./sportsdb.ts";
+import { postCycle2030 } from "./cycle2030.ts";
 import { fmtFotmobEval, fotmobEval, fotmobPerformanceLines } from "./fotmob.ts";
 import { type BrazilPostMortemInput, brazilPostMortem, fmtBrazilPostMortem, fmtMatchPreview, postBracketOracle, previewMatch } from "./oracle.ts";
 import {
@@ -134,7 +135,8 @@ export async function postDailyMenu(date: string): Promise<void> {
 
 /** Once the Cup is decided there's nothing to preview — it only runs every 4
  *  years. Keep a lightweight daily touch: the countdown to the next World Cup
- *  plus the Seleção's agenda (friendlies/other games) when there's something on. */
+ *  plus the Seleção's agenda (friendlies/other games) when there's something on,
+ *  then the 2030 cycle briefing (roadmap + how the 2026 squad ages into it). */
 async function postPostTournamentDigest(): Promise<void> {
   const now = Date.now();
   const friendlies = await brazilFixtures(
@@ -142,6 +144,11 @@ async function postPostTournamentDigest(): Promise<void> {
     new Date(now + 400 * 86_400_000).toISOString(),
   ).then((events) => fmtBrazilFriendlies(events)).catch(() => null);
   await sendMessage([nextWorldCupLine(), friendlies].filter(Boolean).join("\n\n"));
+  try {
+    await postCycle2030();
+  } catch (err) {
+    console.error("2030 cycle briefing failed:", (err as Error).message);
+  }
 }
 
 /** Last-N results per team (most recent first), from finished matches. */
