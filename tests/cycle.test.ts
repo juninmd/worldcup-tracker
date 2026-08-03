@@ -5,6 +5,7 @@ import {
   type CycleMatch,
   classifyCycleMatch,
   cycleEloMoves,
+  finishedCycleEvents,
   fmtCycleStandings,
   isPlayed,
   qualifyingTable,
@@ -50,6 +51,10 @@ test("yearlyWindows: a window already under a year stays a single slice", () => 
 test("isPlayed: a scoreless fixture is not a 0–0 (Number(null) is 0, not NaN)", () => {
   expect(isPlayed(match("Brazil", null, null, "Peru"))).toBe(false);
   expect(isPlayed(match("Brazil", 0, 0, "Peru"))).toBe(true);
+});
+
+test("finishedCycleEvents: nothing to fetch before the cycle opens", async () => {
+  expect(await finishedCycleEvents(new Date("2026-06-01T00:00:00Z"))).toEqual([]);
 });
 
 test("qualifyingTable: 3/1/0 points and CONMEBOL tie-breaks", () => {

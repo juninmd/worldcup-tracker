@@ -26,6 +26,7 @@ import { fmtSimulation, simulateKnockout } from "./simulate.ts";
 import { brazilMetrics, brazilNegativeIncidents, fmtBrazilMetrics } from "./brazil.ts";
 import { brazilFixtures } from "./sportsdb.ts";
 import { postCycle2030 } from "./cycle2030.ts";
+import { finishedCycleEvents } from "./cycle.ts";
 import { fmtFotmobEval, fotmobEval, fotmobPerformanceLines } from "./fotmob.ts";
 import { type BrazilPostMortemInput, brazilPostMortem, fmtBrazilPostMortem, fmtMatchPreview, postBracketOracle, previewMatch } from "./oracle.ts";
 import {
@@ -47,8 +48,14 @@ const HEARTBEAT = new URL("../data/heartbeat", import.meta.url).pathname.replace
 export async function ratingsNow() {
   const all = await mergedSeasonEvents();
   const finished = all.filter(isFinished);
+  // Goal calibration stays on World Cup matches only: qualifiers and friendlies
+  // score at a different rate and would drag the tournament's scoreline model.
   calibrateGoals(finished);
-  return { all, table: trainRatings(finished) };
+  // Ratings, on the other hand, must keep moving through the 2030 cycle — the
+  // 2026 feed is frozen at the final. Best-effort: a flaky calendar degrades to
+  // the World Cup table instead of breaking every prediction.
+  const cycle = await finishedCycleEvents().catch(() => [] as WcEvent[]);
+  return { all, table: trainRatings([...finished, ...cycle]) };
 }
 
 const onlyGoals = (tl: TimelineItem[]) =>

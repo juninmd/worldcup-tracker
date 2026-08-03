@@ -73,6 +73,15 @@ export async function cycleMatches(): Promise<CycleMatch[]> {
     (a.event.strTimestamp ?? a.event.dateEvent).localeCompare(b.event.strTimestamp ?? b.event.dateEvent));
 }
 
+/** Finished cycle matches as plain events. Between World Cups the 2026 season feed
+ *  stops moving, so this is the only thing that keeps the rating table learning —
+ *  without it every prediction until 2030 runs on the ratings frozen at the final.
+ *  Returns nothing before the cycle opens, so mid-tournament callers pay no fetch. */
+export async function finishedCycleEvents(now = new Date()): Promise<WcEvent[]> {
+  if (now.getTime() < Date.parse(iso(CYCLE.startDate))) return [];
+  return (await cycleMatches()).map((m) => m.event).filter(isPlayed);
+}
+
 export interface QualRow {
   rank: number;
   team: string;
