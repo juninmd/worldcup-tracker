@@ -9,7 +9,7 @@ import { sendMessage } from "./telegram.ts";
 
 // Same cluster LiteLLM gateway used by analysis.ts (OpenAI-compatible, no API bill).
 const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL ?? "https://litellm.antonio-code.duckdns.org/v1";
-const LITELLM_MODEL = process.env.LITELLM_MODEL ?? "cloud/gpt-oss-120b";
+const LITELLM_MODEL = process.env.LITELLM_MODEL ?? "cloud/auto";
 
 const client = () => new OpenAI({ baseURL: LITELLM_BASE_URL, apiKey: process.env.LITELLM_API_KEY ?? "" });
 

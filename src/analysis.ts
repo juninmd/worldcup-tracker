@@ -12,7 +12,7 @@ import { expectedGoalsFromMatrix, scoreMatrix } from "./predict.ts";
 // Runs against the cluster's own LiteLLM gateway (OpenAI-compatible), using the
 // same free backends (NVIDIA NIM/Gemini) the rest of the cluster's AI apps share.
 const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL ?? "https://litellm.antonio-code.duckdns.org/v1";
-const LITELLM_MODEL = process.env.LITELLM_MODEL ?? "cloud/gpt-oss-120b";
+const LITELLM_MODEL = process.env.LITELLM_MODEL ?? "cloud/auto";
 const LITELLM_API_KEY = process.env.LITELLM_API_KEY || "litellm";
 
 const PlayerNote = z.object({
