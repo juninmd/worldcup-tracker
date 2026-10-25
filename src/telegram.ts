@@ -1,14 +1,15 @@
-import { config } from "./config.ts";
+import { requireTelegram } from "./config.ts";
 import { recordOperationalEvent } from "./db.ts";
 
-const api = (m: string) =>
-  `https://api.telegram.org/bot${config.telegramToken}/${m}`;
+const api = (token: string, m: string) =>
+  `https://api.telegram.org/bot${token}/${m}`;
 
 async function post(method: string, body: Record<string, unknown>): Promise<Response> {
-  return fetch(api(method), {
+  const { token, chat } = requireTelegram();
+  return fetch(api(token, method), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: config.telegramChat, ...body }),
+    body: JSON.stringify({ chat_id: chat, ...body }),
   });
 }
 
