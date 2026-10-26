@@ -6,6 +6,8 @@ const FIFA_COMPETITION_ID = "17";
 const FIFA_SEASON_ID = "285023";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// The live loop awaits each request in sequence: a hung socket would freeze polling.
+const FETCH_TIMEOUT_MS = 15_000;
 
 function ttlFor(path: string): number {
   if (path.startsWith("fifa:/calendar/matches")) return 20_000;
@@ -30,7 +32,7 @@ async function getJson<T>(cachePath: string, url: string): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
-      res = await fetch(url, { headers: { "User-Agent": "worldcup-tracker/1.0" } });
+      res = await fetch(url, { headers: { "User-Agent": "worldcup-tracker/1.0" }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     } catch (err) {
       if (hit) { observe("stale"); return JSON.parse(hit.body) as T; }
       observe("error");
