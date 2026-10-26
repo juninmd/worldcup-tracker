@@ -49,7 +49,7 @@ async function getJson<T>(cacheKey: string, url: string): Promise<T | null> {
   const hit = cacheGet(cacheKey);
   if (hit && hit.age < TTL) { observe("cache"); try { return JSON.parse(hit.body) as T; } catch { /* refetch */ } }
   try {
-    const res = await fetch(url, { headers: { "User-Agent": UA } });
+    const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) { if (hit) { observe("stale"); return JSON.parse(hit.body) as T; } observe("error"); return null; }
     const text = await res.text();
     cachePut(cacheKey, text);
