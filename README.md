@@ -31,6 +31,9 @@ camisa e resumo do jogador**, e comparação **expectativa × realidade** no fim
 - 🧩 **Fallback oficial de grupos** — quando o feed gratuito vem parcial, a simulação usa os 12 grupos oficiais da Copa 2026 e substitui os jogos por resultados reais assim que aparecem.
 - ✅ **Chave com dados reais** — assim que um confronto de mata-mata (Rodada de 32 → final) termina, o placar e o vencedor reais sobrescrevem a projeção e propagam para as rodadas seguintes (✅ real · 🔮 projeção). Pênaltis/prorrogação são sinalizados no fim de jogo.
 - 🇧🇷 **Raio-X do Brasil** — campanha, gols, xG heurístico, finalizações, conversão, chances claras, escanteios, disciplina, períodos e continuidade dos titulares.
+- 🇧🇷 **Seleção Brasileira 360°** — central consolidada com contagem regressiva para o próximo jogo, último resultado, status nas Eliminatórias CONMEBOL e últimas notícias do ge.globo.
+- 📰 **Plantão de Notícias** — monitoramento de feeds RSS em tempo real do ge.globo por tópico (Seleção Brasileira, Brasileirão Série A, Copa do Brasil, Libertadores, Champions League e Premier League) com links oficiais e envio formatado ao Telegram.
+- 🏆 **Central de Ligas & Tabelas** — classificação completa em tempo real via FotMob (jogos, vitórias, empates, derrotas, saldo de gols e pontos) das principais ligas e Eliminatórias da Copa.
 - 📐 **Métricas do modelo** — snapshots pré-jogo imutáveis + backtest temporal sem leakage; Brier, Log Loss, RPS, calibração, acurácia, placar exato, MAE, fase, faixa de confiança e viés do Brasil. Baseline de odds fica `n/d` porque o feed FIFA não fornece mercado.
 - 🩺 **Saúde operacional** — sucesso/erro, cache fresco/stale, p50/p95, heartbeat e reconciliação de alertas, sem gravar payloads ou credenciais.
 
@@ -68,6 +71,9 @@ bun run src/cli.ts cards [--send]         # ranking de cartões da edição (std
 bun run src/cli.ts metrics                # métricas de produção + backtest temporal sem leakage
 bun run src/cli.ts brazil                 # raio-X estatístico do Brasil
 bun run src/cli.ts status                 # SLOs, cache, heartbeat e auditoria de alertas
+bun run src/cli.ts news [topic] [--send]      # plantão de notícias (selecao, brasileirao, libertadores, etc.)
+bun run src/cli.ts table [league] [--send]    # classificação (brasileirao, champions, libertadores, premier, etc.)
+bun run src/cli.ts selecao [--send]           # hub 360° da Seleção (próximo jogo, eliminatórias, notícias)
 bun run src/cli.ts details "Brazil vs Morocco"  # escalação completa com fotos + estatísticas no canal
 bun run src/cli.ts analysis "Brazil vs Morocco" [--send]  # análise da partida com IA + mapa de calor
 bun test                                  # testes do motor de previsão
@@ -92,6 +98,9 @@ src/
   brazil.ts     métricas agregadas da campanha brasileira
   operations.ts saúde do polling/FIFA/Telegram, cache, heartbeat e alertas
   db.ts         cache + snapshots imutáveis de previsão + telemetria operacional em SQLite
+  news.ts       plantão de notícias RSS ge.globo por campeonato e seleção
+  leagues.ts    classificação e tabelas em tempo real via FotMob API
+  selecao.ts    hub 360° da Seleção Brasileira (agenda, eliminatórias e notícias)
   charts.ts     cards PNG via QuickChart (artilharia, cartões, mapa de calor, chave, etc.)
   state.ts      dedup (gols/pré-jogo/fim já postados)
   engine.ts     orquestração: menu, poll ao vivo, replay
