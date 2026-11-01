@@ -254,7 +254,46 @@ switch (cmd) {
     console.log(fmtOperationalStatus(await runtimeStatus()));
     break;
   }
+  case "news":
+  case "noticias": {
+    const { fetchNews, fmtNews, postNews } = await import("./news.ts");
+    const send = rest.includes("--send");
+    const topic = (rest.find((r) => r !== "--send") ?? "selecao") as any;
+    if (send) {
+      await postNews(topic);
+      console.log(`News sent: ${topic}`);
+      break;
+    }
+    console.log(fmtNews(topic, await fetchNews(topic)));
+    break;
+  }
+  case "table":
+  case "league":
+  case "liga": {
+    const { fetchLeagueTable, fmtLeagueTable, postLeagueTable } = await import("./leagues.ts");
+    const send = rest.includes("--send");
+    const league = (rest.find((r) => r !== "--send") ?? "brasileirao") as any;
+    if (send) {
+      await postLeagueTable(league);
+      console.log(`League table sent: ${league}`);
+      break;
+    }
+    console.log(fmtLeagueTable(await fetchLeagueTable(league)));
+    break;
+  }
+  case "selecao":
+  case "brasil-hub":
+  case "hub": {
+    const { fetchSelecaoData, fmtSelecaoHub, postSelecaoHub } = await import("./selecao.ts");
+    if (rest[0] === "--send") {
+      await postSelecaoHub();
+      console.log("Selecao hub sent.");
+      break;
+    }
+    console.log(fmtSelecaoHub(await fetchSelecaoData()));
+    break;
+  }
   default:
-    console.log("commands: menu [date] | track | homologate [date|forecast|full|telegram-dry-run] [--send] | predict <H> <A> | champion | forecast [--send] | metrics | brazil | 2030 [--send] | status | scorers [--send] | cards [--send] | venues [--send] | squad <team> [--send] | trivia [--send] | goaltimes [--send] | live [--send] | highlights [--send] | h2h <A> <B> [--send] | streaks [--send] | confederations [--send] | info [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send]");
+    console.log("commands: menu [date] | track | homologate [date|forecast|full|telegram-dry-run] [--send] | predict <H> <A> | champion | forecast [--send] | metrics | brazil | 2030 [--send] | status | scorers [--send] | cards [--send] | venues [--send] | squad <team> [--send] | trivia [--send] | goaltimes [--send] | live [--send] | highlights [--send] | h2h <A> <B> [--send] | streaks [--send] | confederations [--send] | info [--send] | details <team> | analysis <team> [--send] | standings [--send] | bracket [--send] | news [topic] [--send] | table [league] [--send] | selecao [--send]");
     console.log("merged events:", (await mergedSeasonEvents()).length);
 }

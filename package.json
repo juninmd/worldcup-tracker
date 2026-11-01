@@ -17,6 +17,9 @@
     "metrics": "bun run src/cli.ts metrics",
     "brazil": "bun run src/cli.ts brazil",
     "status": "bun run src/cli.ts status",
+    "news": "bun run src/cli.ts news",
+    "table": "bun run src/cli.ts table",
+    "selecao": "bun run src/cli.ts selecao",
     "test": "bun test"
   },
   "devDependencies": {
