@@ -18,12 +18,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function call(method: string, body: Record<string, unknown>): Promise<void> {
   const started = Date.now();
-  let res = await post(method, body);
+  let currentBody = body;
+  let res = await post(method, currentBody);
   // Feed text can contain unbalanced Markdown (* _ [ ]) that Telegram rejects.
   // Retry once as plain text so the alert still lands instead of crashing the poll.
-  if (res.status === 400 && body.parse_mode) {
-    const { parse_mode, ...plain } = body;
-    res = await post(method, plain);
+  if (res.status === 400 && currentBody.parse_mode) {
+    const { parse_mode, ...plain } = currentBody;
+    currentBody = plain;
+    res = await post(method, currentBody);
   }
   // Telegram throttles bursts (~20 msg/min/group); honour retry_after and resend.
   for (let attempt = 0; res.status === 429 && attempt < 3; attempt++) {
@@ -31,7 +33,7 @@ async function call(method: string, body: Record<string, unknown>): Promise<void
       { parameters?: { retry_after?: number } } | null;
     const wait = body429?.parameters?.retry_after ?? 5;
     await sleep((wait + 1) * 1000);
-    res = await post(method, body);
+    res = await post(method, currentBody);
   }
   if (!res.ok) {
     const txt = await res.text();
@@ -45,20 +47,44 @@ async function call(method: string, body: Record<string, unknown>): Promise<void
 // it and the whole post is rejected (400 "message is too long"). Split on line
 // boundaries so long content still lands instead of vanishing.
 const TG_MAX = 4096;
+export const TG_CAPTION_MAX = 1024;
 
-function splitForTelegram(text: string): string[] {
-  if (text.length <= TG_MAX) return [text];
+/** Truncate a string by Unicode code points (safe for surrogate pairs / emojis). */
+export function truncateByCodePoints(text: string, maxCodePoints: number): string {
+  const codePoints = Array.from(text);
+  if (codePoints.length <= maxCodePoints) return text;
+  return codePoints.slice(0, maxCodePoints).join("");
+}
+
+export function splitForTelegram(text: string): string[] {
+  const codePoints = Array.from(text);
+  if (codePoints.length <= TG_MAX) return [text];
   const chunks: string[] = [];
-  let buf = "";
-  const flush = () => { if (buf) { chunks.push(buf); buf = ""; } };
+  let buf: string[] = [];
+  const flush = () => {
+    if (buf.length) {
+      chunks.push(buf.join(""));
+      buf = [];
+    }
+  };
+
   for (const line of text.split("\n")) {
-    // A single line longer than the cap can't ride in one message — slice it.
-    let rest = line;
-    while (rest.length > TG_MAX) { flush(); chunks.push(rest.slice(0, TG_MAX)); rest = rest.slice(TG_MAX); }
-    if (buf.length + rest.length + 1 > TG_MAX) flush();
-    buf = buf ? `${buf}\n${rest}` : rest;
+    let rest = Array.from(line);
+    while (rest.length > TG_MAX) {
+      flush();
+      chunks.push(rest.slice(0, TG_MAX).join(""));
+      rest = rest.slice(TG_MAX);
+    }
+    const needed = (buf.length > 0 ? 1 : 0) + rest.length;
+    if (buf.length + needed > TG_MAX) {
+      flush();
+    }
+    if (buf.length > 0) {
+      buf.push("\n");
+    }
+    buf.push(...rest);
   }
-  if (buf) chunks.push(buf);
+  flush();
   return chunks;
 }
 
@@ -73,8 +99,9 @@ export async function sendMessage(text: string, preview = false): Promise<void> 
 }
 
 export async function sendPhoto(photoUrl: string, caption: string): Promise<void> {
+  const safeCaption = truncateByCodePoints(caption, TG_CAPTION_MAX);
   try {
-    await sendPhotoStrict(photoUrl, caption);
+    await sendPhotoStrict(photoUrl, safeCaption);
   } catch {
     // Image URL rejected by Telegram → fall back to text so the alert still lands.
     await sendMessage(caption);
@@ -82,19 +109,21 @@ export async function sendPhoto(photoUrl: string, caption: string): Promise<void
 }
 
 export function sendPhotoStrict(photoUrl: string, caption: string): Promise<void> {
-  return call("sendPhoto", { photo: photoUrl, caption, parse_mode: "Markdown" });
+  const safeCaption = truncateByCodePoints(caption, TG_CAPTION_MAX);
+  return call("sendPhoto", { photo: photoUrl, caption: safeCaption, parse_mode: "Markdown" });
 }
 
 /** Photo album (2–10 images) with the caption on the first item — used to show
  *  both team badges / event artwork together as a single rich card. */
 export async function sendMediaGroup(photoUrls: string[], caption: string): Promise<void> {
+  const safeCaption = truncateByCodePoints(caption, TG_CAPTION_MAX);
   const photos = photoUrls.filter(Boolean).slice(0, 10);
   if (photos.length < 2) { // album needs ≥2; otherwise a single photo (or text)
     if (photos[0]) return sendPhoto(photos[0], caption);
     return sendMessage(caption);
   }
   const media = photos.map((photo, i) =>
-    i === 0 ? { type: "photo", media: photo, caption, parse_mode: "Markdown" } : { type: "photo", media: photo });
+    i === 0 ? { type: "photo", media: photo, caption: safeCaption, parse_mode: "Markdown" } : { type: "photo", media: photo });
   try {
     await call("sendMediaGroup", { media });
   } catch {
@@ -103,12 +132,13 @@ export async function sendMediaGroup(photoUrls: string[], caption: string): Prom
 }
 
 export async function sendMediaGroupStrict(photoUrls: string[], caption: string): Promise<void> {
+  const safeCaption = truncateByCodePoints(caption, TG_CAPTION_MAX);
   const photos = photoUrls.filter(Boolean).slice(0, 10);
   if (photos.length < 2) {
     if (photos[0]) return sendPhotoStrict(photos[0], caption);
     throw new Error("sendMediaGroupStrict requires at least one photo");
   }
   const media = photos.map((photo, i) =>
-    i === 0 ? { type: "photo", media: photo, caption, parse_mode: "Markdown" } : { type: "photo", media: photo });
+    i === 0 ? { type: "photo", media: photo, caption: safeCaption, parse_mode: "Markdown" } : { type: "photo", media: photo });
   await call("sendMediaGroup", { media });
 }

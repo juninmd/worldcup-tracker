@@ -19,12 +19,12 @@ test("extractRows: parses FotMob table rows accurately", () => {
 
   const rows = extractRows(sample);
   expect(rows.length).toBe(2);
-  expect(rows[0].idx).toBe(1);
-  expect(rows[0].shortName).toBe("Flamengo");
-  expect(rows[0].pts).toBe(73);
-  expect(rows[1].idx).toBe(2);
-  expect(rows[1].shortName).toBe("Palmeiras");
-  expect(rows[1].pts).toBe(70);
+  expect(rows[0]!.idx).toBe(1);
+  expect(rows[0]!.shortName).toBe("Flamengo");
+  expect(rows[0]!.pts).toBe(73);
+  expect(rows[1]!.idx).toBe(2);
+  expect(rows[1]!.shortName).toBe("Palmeiras");
+  expect(rows[1]!.pts).toBe(70);
 });
 
 test("extractRows: returns empty array on invalid payload", () => {

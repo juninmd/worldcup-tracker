@@ -25,6 +25,7 @@ import { fmtTournamentProjection, fmtTournamentSurprises, tournamentProjection }
 import { fmtSimulation, simulateKnockout } from "./simulate.ts";
 import { brazilMetrics, brazilNegativeIncidents, fmtBrazilMetrics } from "./brazil.ts";
 import { brazilFixtures } from "./sportsdb.ts";
+import { checkSourceHealthAlerts } from "./operations.ts";
 import { postCycle2030 } from "./cycle2030.ts";
 import { finishedCycleEvents } from "./cycle.ts";
 import { fmtFotmobEval, fotmobEval, fotmobPerformanceLines } from "./fotmob.ts";
@@ -451,6 +452,7 @@ export async function pollOnce(): Promise<number> {
   let live = 0;
 
   await checkUpcomingAlerts(all, state);
+  await checkSourceHealthAlerts(state, true);
 
   for (const e of all) {
     if (isLive(e)) {

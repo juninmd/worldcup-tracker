@@ -35,7 +35,7 @@ camisa e resumo do jogador**, e comparação **expectativa × realidade** no fim
 - 📰 **Plantão de Notícias** — monitoramento de feeds RSS em tempo real do ge.globo por tópico (Seleção Brasileira, Brasileirão Série A, Copa do Brasil, Libertadores, Champions League e Premier League) com links oficiais e envio formatado ao Telegram.
 - 🏆 **Central de Ligas & Tabelas** — classificação completa em tempo real via FotMob (jogos, vitórias, empates, derrotas, saldo de gols e pontos) das principais ligas e Eliminatórias da Copa.
 - 📐 **Métricas do modelo** — snapshots pré-jogo imutáveis + backtest temporal sem leakage; Brier, Log Loss, RPS, calibração, acurácia, placar exato, MAE, fase, faixa de confiança e viés do Brasil. Baseline de odds fica `n/d` porque o feed FIFA não fornece mercado.
-- 🩺 **Saúde operacional** — sucesso/erro, cache fresco/stale, p50/p95, heartbeat e reconciliação de alertas, sem gravar payloads ou credenciais.
+- 🩺 **Saúde operacional e painel de fontes** — taxa de erro e latência p95 das últimas 24h por subsistema (FIFA, FotMob, Telegram, Poll). Alerta automaticamente no Telegram caso uma fonte registre ≥ 5 falhas consecutivas (alerta único por incidente, sem spam) e emite aviso de recuperação quando o serviço normaliza.
 
 > **Transparência:** o ranking exibido é o snapshot oficial FIFA de 11/06/2026. Elo, qualidade de elenco, xG e chances claras são derivados internos do tracker e são rotulados como estimativas. Quando o feed FIFA não oferece o chaveamento, qualquer fallback é marcado como heurístico e não oficial.
 
@@ -44,12 +44,31 @@ camisa e resumo do jogador**, e comparação **expectativa × realidade** no fim
 ```bash
 cd worldcup-tracker
 bun install
-cp .env.example .env   # preencha TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID
+cp .env.example .env   # preencha as variáveis de ambiente
 ```
+
+### Variáveis de Ambiente (`.env.example`)
+
+| Variável | Descrição | Padrão / Exemplo |
+| :--- | :--- | :--- |
+| `TELEGRAM_BOT_TOKEN` | Token de autenticação do Bot do Telegram gerado via BotFather. | _Obrigatório para envios_ |
+| `TELEGRAM_CHAT_ID` | ID numérico do canal ou grupo do Telegram para onde as mensagens serão enviadas. | _Obrigatório para envios_ |
+| `POLL_INTERVAL_SEC` | Intervalo do loop de monitoramento contínuo em segundos quando não há jogos ao vivo. | `60` |
+| `LITELLM_BASE_URL` | URL base do gateway LiteLLM para análise de partidas com IA (usado pelo comando `analysis`). | `https://litellm.antonio-code.duckdns.org/v1` |
+| `LITELLM_API_KEY` | Chave de API para autenticação no gateway LiteLLM. | _Opcional em dev_ |
+| `LITELLM_MODEL` | Identificador do modelo de linguagem a ser chamado via LiteLLM. | `cloud/gpt-oss-120b` |
 
 > **Análise com IA:** o comando `analysis` chama o gateway LiteLLM do cluster
 > (`LITELLM_BASE_URL`/`LITELLM_API_KEY`/`LITELLM_MODEL` no `.env`). Os demais
 > comandos funcionam sem essas variáveis.
+
+### Homologação (`HOMOLOGATION.md`)
+
+O arquivo `HOMOLOGATION.md` documenta os gates de homologação definitivos da aplicação para produção. Ele estabelece o contrato oficial de integridade dos dados e fontes:
+- Execução dos testes e verificação de tipagem (`bun test` e `bun run tsc --noEmit`).
+- Validação dos dados esportivos oficiais da FIFA (`bun run src/cli.ts homologate full`).
+- Validação do chaveamento e renderização de diagramas da Copa (`bun run src/cli.ts homologate forecast`).
+- Validação de entrega e formatação de mídia do Telegram em dry-run sem envio real (`bun run src/cli.ts homologate telegram-dry-run`).
 
 > **Importante:** adicione o bot ao canal/grupo de destino e dê permissão de
 > postar (admin, em canais). Sem isso o Telegram responde `chat not found`.
@@ -70,7 +89,7 @@ bun run src/cli.ts scorers [--send]       # artilharia (stdout, ou envia ao cana
 bun run src/cli.ts cards [--send]         # ranking de cartões da edição (stdout, ou envia ao canal)
 bun run src/cli.ts metrics                # métricas de produção + backtest temporal sem leakage
 bun run src/cli.ts brazil                 # raio-X estatístico do Brasil
-bun run src/cli.ts status                 # SLOs, cache, heartbeat e auditoria de alertas
+bun run src/cli.ts status                 # SLOs, cache, painel de saúde das fontes e incidentes (alias: ops, saude)
 bun run src/cli.ts news [topic] [--send]      # plantão de notícias (selecao, brasileirao, libertadores, etc.)
 bun run src/cli.ts table [league] [--send]    # classificação (brasileirao, champions, libertadores, premier, etc.)
 bun run src/cli.ts selecao [--send]           # hub 360° da Seleção (próximo jogo, eliminatórias, notícias)

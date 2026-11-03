@@ -1,9 +1,12 @@
 import { stat } from "node:fs/promises";
-import { cacheSummary, operationalSummary, type OperationalSummary } from "./db.ts";
-import { loadState } from "./state.ts";
+import { cacheSummary, consecutiveErrors, operationalSummary, type OperationalSummary } from "./db.ts";
+import { loadState, saveState, type State } from "./state.ts";
 import { isFinished, mergedSeasonEvents, timeline } from "./sportsdb.ts";
+import { sendMessage } from "./telegram.ts";
 
 const HEARTBEAT = new URL("../data/heartbeat", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+export const MONITORED_SUBSYSTEMS = ["fifa", "fotmob", "telegram"] as const;
+export const CONSECUTIVE_ERROR_ALERT_THRESHOLD = 5;
 
 export interface DeliveryAudit {
   trackedMatches: number;
@@ -73,9 +76,62 @@ export function fmtOperationalStatus(status: RuntimeStatus): string {
     `Heartbeat: *${status.heartbeatAgeSeconds === null ? "ausente" : `${status.heartbeatAgeSeconds}s`}* ${status.heartbeatStale ? "❌ stale" : "✅ fresco"}`,
     `Alertas de gol: *${status.delivery.postedGoals}/${status.delivery.expectedGoals}* em ${status.delivery.trackedMatches} jogos · *${status.delivery.missingGoals} alerta(s) de gol pendente(s)* · duplicatas *${status.delivery.duplicateKeys}*`,
   ];
+  lines.push(`\n📊 *Fontes & Subsistemas:*`);
   for (const [name, slice] of Object.entries(op.bySubsystem)) {
-    lines.push(`• ${name}: ${slice.total} ops · ${pct(slice.successRate)} · p95 ${slice.latencyP95Ms ?? "n/d"}ms`);
+    const errRateStr = slice.errorRate !== null ? `${(slice.errorRate * 100).toFixed(1)}%` : "0.0%";
+    const consecStr = slice.consecutiveErrors > 0 ? ` · ⚠️ ${slice.consecutiveErrors} erros seguidos` : "";
+    lines.push(`• *${name.toUpperCase()}*: ${slice.total} reqs · erro *${errRateStr}* · p95 *${slice.latencyP95Ms ?? "n/d"}ms*${consecStr}`);
   }
-  lines.push(`_Sem payloads, URLs autenticadas ou credenciais. Latência mede processamento após detecção, não publicação FIFA ponta a ponta._`);
+  lines.push(`\n_Sem payloads, URLs autenticadas ou credenciais. Latência mede processamento após detecção, não publicação FIFA ponta a ponta._`);
   return lines.join("\n");
+}
+
+export interface IncidentAlertResult {
+  alerted: string[];
+  recovered: string[];
+}
+
+export async function checkSourceHealthAlerts(
+  state?: State,
+  sendAlert = true,
+): Promise<IncidentAlertResult> {
+  const currentState = state ?? (await loadState());
+  if (!currentState.activeSubsystemIncidents) {
+    currentState.activeSubsystemIncidents = [];
+  }
+
+  const alerted: string[] = [];
+  const recovered: string[] = [];
+
+  for (const sub of MONITORED_SUBSYSTEMS) {
+    const count = consecutiveErrors(sub);
+    const hasIncident = currentState.activeSubsystemIncidents.includes(sub);
+
+    if (count >= CONSECUTIVE_ERROR_ALERT_THRESHOLD && !hasIncident) {
+      currentState.activeSubsystemIncidents.push(sub);
+      alerted.push(sub);
+      if (sendAlert) {
+        await sendMessage(
+          `🚨 *ALERTA OPERACIONAL — Falha na fonte ${sub.toUpperCase()}*\n` +
+            `O subsistema registrou *${count} erros consecutivos* nas últimas requisições.\n` +
+            `Investigando instabilidade ou indisponibilidade da fonte.`,
+        ).catch(() => {});
+      }
+    } else if (count === 0 && hasIncident) {
+      currentState.activeSubsystemIncidents = currentState.activeSubsystemIncidents.filter((s) => s !== sub);
+      recovered.push(sub);
+      if (sendAlert) {
+        await sendMessage(
+          `✅ *RECUPERAÇÃO — Fonte ${sub.toUpperCase()} normalizada*\n` +
+            `O subsistema voltou a responder com sucesso. Incidente finalizado.`,
+        ).catch(() => {});
+      }
+    }
+  }
+
+  if (alerted.length || recovered.length) {
+    await saveState(currentState);
+  }
+
+  return { alerted, recovered };
 }

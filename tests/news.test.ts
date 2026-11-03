@@ -23,10 +23,10 @@ const sampleRss = `<?xml version="1.0" encoding="UTF-8"?>
 test("parseRssXml: parses items, strips CDATA and decodes entities", () => {
   const items = parseRssXml(sampleRss);
   expect(items.length).toBe(2);
-  expect(items[0].title).toBe("Brasil Sub-20: veja os convocados & programação");
-  expect(items[0].link).toBe("https://ge.globo.com/futebol/noticia/2026/10/brasil-sub-20.ghtml");
-  expect(items[0].summary).toBe("Amistosos em Belém serão os últimos antes do Sul-Americano.");
-  expect(items[1].title).toBe("Ancelotti elogia Vini Jr e Rodrygo");
+  expect(items[0]!.title).toBe("Brasil Sub-20: veja os convocados & programação");
+  expect(items[0]!.link).toBe("https://ge.globo.com/futebol/noticia/2026/10/brasil-sub-20.ghtml");
+  expect(items[0]!.summary).toBe("Amistosos em Belém serão os últimos antes do Sul-Americano.");
+  expect(items[1]!.title).toBe("Ancelotti elogia Vini Jr e Rodrygo");
 });
 
 test("parseRssXml: handles empty or malformed XML gracefully", () => {

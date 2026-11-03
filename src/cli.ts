@@ -25,7 +25,7 @@ import { homologateForecast, homologateFull, homologateTelegramDryRun } from "./
 import { buildLeakFreeBacktest, evaluatePredictions, fmtModelMetrics } from "./metrics.ts";
 import { evaluatedPredictionSnapshots, settlePredictionSnapshot } from "./db.ts";
 import { brazilMetrics, fmtBrazilMetrics } from "./brazil.ts";
-import { fmtOperationalStatus, runtimeStatus } from "./operations.ts";
+import { checkSourceHealthAlerts, fmtOperationalStatus, runtimeStatus } from "./operations.ts";
 
 function todayBRT(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -250,7 +250,9 @@ switch (cmd) {
     break;
   }
   case "status":
-  case "ops": {
+  case "ops":
+  case "saude": {
+    await checkSourceHealthAlerts(undefined, rest.includes("--send"));
     console.log(fmtOperationalStatus(await runtimeStatus()));
     break;
   }
