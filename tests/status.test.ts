@@ -4,9 +4,9 @@ import { fmtOperationalStatus, type RuntimeStatus } from "../src/operations.ts";
 const status: RuntimeStatus = {
   windowHours: 24,
   operations: {
-    since: 0, total: 10, errors: 1, cacheHits: 3, staleFallbacks: 1,
-    successRate: 0.9, latencyP50Ms: 20, latencyP95Ms: 200,
-    bySubsystem: { telegram: { total: 2, errors: 0, cacheHits: 0, staleFallbacks: 0, successRate: 1, latencyP50Ms: 50, latencyP95Ms: 70 } },
+    since: 0, total: 10, errors: 1, errorRate: 0.1, cacheHits: 3, staleFallbacks: 1,
+    successRate: 0.9, latencyP50Ms: 20, latencyP95Ms: 200, consecutiveErrors: 0,
+    bySubsystem: { telegram: { total: 2, errors: 0, errorRate: 0, cacheHits: 0, staleFallbacks: 0, successRate: 1, latencyP50Ms: 50, latencyP95Ms: 70, consecutiveErrors: 0 } },
   },
   cache: { entries: 5, newestAgeMs: 1000 },
   heartbeatAgeSeconds: 30,

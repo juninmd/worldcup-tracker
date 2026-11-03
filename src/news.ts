@@ -76,7 +76,7 @@ export function parseRssXml(xml: string): NewsItem[] {
   let match: RegExpExecArray | null;
 
   while ((match = itemRegex.exec(xml)) !== null) {
-    const raw = match[1];
+    const raw = match[1] ?? "";
     const rawTitle = (raw.match(/<title>([\s\S]*?)<\/title>/i) || [])[1] ?? "";
     const rawLink = (raw.match(/<link>([\s\S]*?)<\/link>/i) || [])[1] ?? "";
     const rawDesc = (raw.match(/<description>([\s\S]*?)<\/description>/i) || [])[1] ?? "";
@@ -167,6 +167,7 @@ export function fmtNews(topic: NewsTopic, items: NewsItem[], limit = 5): string 
 
   for (let i = 0; i < slice.length; i++) {
     const item = slice[i];
+    if (!item) continue;
     lines.push(`*${i + 1}. ${item.title}*`);
     if (item.summary) lines.push(`_${item.summary}_`);
     lines.push(`🔗 [Ler matéria completa](${item.link})\n`);

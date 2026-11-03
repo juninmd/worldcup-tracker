@@ -27,3 +27,47 @@ test("operational repository: empty window is explicit", () => {
   expect(metrics.latencyP95Ms).toBeNull();
   database.close();
 });
+
+test("operational repository & alerts: detects 5 consecutive errors and recovery without duplicate spam", async () => {
+  const { recordOperationalEvent, consecutiveErrors } = await import("../src/db.ts");
+  const { checkSourceHealthAlerts } = await import("../src/operations.ts");
+  const mockState = {
+    postedGoals: [] as string[],
+    prematchPosted: [] as string[],
+    fulltimePosted: [] as string[],
+    postedSubs: [] as string[],
+    postedVar: [] as string[],
+    postedUpcomingAlert: [] as string[],
+    postedCards: [] as string[],
+    postedAnalysis: [] as string[],
+    activeSubsystemIncidents: [] as string[],
+  };
+
+  // Simulate 4 errors: should not alert yet
+  for (let i = 0; i < 4; i++) {
+    recordOperationalEvent({ subsystem: "fotmob", operation: "matches", outcome: "error", latencyMs: 200 });
+  }
+  expect(consecutiveErrors("fotmob")).toBe(4);
+  let res = await checkSourceHealthAlerts(mockState, false);
+  expect(res.alerted).toEqual([]);
+  expect(mockState.activeSubsystemIncidents).toEqual([]);
+
+  // 5th error: triggers alert
+  recordOperationalEvent({ subsystem: "fotmob", operation: "matches", outcome: "error", latencyMs: 200 });
+  expect(consecutiveErrors("fotmob")).toBe(5);
+  res = await checkSourceHealthAlerts(mockState, false);
+  expect(res.alerted).toEqual(["fotmob"]);
+  expect(mockState.activeSubsystemIncidents).toContain("fotmob");
+
+  // 6th error: no duplicate alert (spam protection)
+  recordOperationalEvent({ subsystem: "fotmob", operation: "matches", outcome: "error", latencyMs: 200 });
+  res = await checkSourceHealthAlerts(mockState, false);
+  expect(res.alerted).toEqual([]);
+
+  // 1 success: triggers recovery
+  recordOperationalEvent({ subsystem: "fotmob", operation: "matches", outcome: "ok", latencyMs: 50 });
+  expect(consecutiveErrors("fotmob")).toBe(0);
+  res = await checkSourceHealthAlerts(mockState, false);
+  expect(res.recovered).toEqual(["fotmob"]);
+  expect(mockState.activeSubsystemIncidents).not.toContain("fotmob");
+});

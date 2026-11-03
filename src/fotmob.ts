@@ -7,14 +7,20 @@ import { canonicalTeam } from "./elo.ts";
 // only to enrich analysis; FIFA stays the source of truth for fixtures/goals.
 const FOTMOB_BASE = "https://www.fotmob.com/api/data";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
-const TTL = 6 * 3_600_000; // a finished match's ratings never change
+const TTL_FINISHED = 6 * 3_600_000; // a finished match's ratings never change
+const TTL_LIVE = 60_000; // 1 min for live / in-progress matches
+const TTL_MATCHES_LIST = 5 * 60_000; // 5 min for fixture search / date listing
 
 type FmMatch = { id: number; home?: { name?: string }; away?: { name?: string } };
 type FmMatchesResp = { leagues?: { matches?: FmMatch[] }[] };
 type FmStat = { value?: number; total?: number };
 type FmPlayerStats = { name?: string; teamName?: string; stats?: { stats?: Record<string, { stat?: FmStat }> }[] };
 type FmSide = { name?: string; rating?: number | string | null };
-type FmDetails = { content?: { lineup?: { homeTeam?: FmSide; awayTeam?: FmSide }; playerStats?: Record<string, FmPlayerStats> } };
+type FmDetails = {
+  header?: { status?: { finished?: boolean; started?: boolean; cancelled?: boolean } };
+  general?: { matchFinished?: boolean };
+  content?: { lineup?: { homeTeam?: FmSide; awayTeam?: FmSide }; playerStats?: Record<string, FmPlayerStats> };
+};
 
 export interface FotmobPlayerLine {
   name: string;
@@ -42,21 +48,51 @@ export interface FotmobMatchEval {
 const norm = (name: string): string =>
   canonicalTeam(name).normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().replace(/[^a-z]/g, "");
 
-async function getJson<T>(cacheKey: string, url: string): Promise<T | null> {
+async function getJson<T>(cacheKey: string, url: string, ttlMs = TTL_FINISHED): Promise<T | null> {
   const started = Date.now();
   const observe = (outcome: "ok" | "cache" | "stale" | "error") =>
     recordOperationalEvent({ subsystem: "fotmob", operation: cacheKey, outcome, latencyMs: Date.now() - started });
   const hit = cacheGet(cacheKey);
-  if (hit && hit.age < TTL) { observe("cache"); try { return JSON.parse(hit.body) as T; } catch { /* refetch */ } }
+  if (hit && hit.age < ttlMs) {
+    try {
+      const parsed = JSON.parse(hit.body) as T;
+      observe("cache");
+      return parsed;
+    } catch {
+      /* corrupted cache entry, refetch below */
+    }
+  }
+
+  const safeParseStale = (): T | null => {
+    if (!hit) return null;
+    try {
+      return JSON.parse(hit.body) as T;
+    } catch {
+      return null;
+    }
+  };
+
   try {
     const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) { if (hit) { observe("stale"); return JSON.parse(hit.body) as T; } observe("error"); return null; }
+    if (!res.ok) {
+      const stale = safeParseStale();
+      if (stale !== null) {
+        observe("stale");
+        return stale;
+      }
+      observe("error");
+      return null;
+    }
     const text = await res.text();
     cachePut(cacheKey, text);
     observe("ok");
     return JSON.parse(text) as T;
   } catch {
-    if (hit) { observe("stale"); return JSON.parse(hit.body) as T; }
+    const stale = safeParseStale();
+    if (stale !== null) {
+      observe("stale");
+      return stale;
+    }
     observe("error");
     return null;
   }
@@ -64,9 +100,9 @@ async function getJson<T>(cacheKey: string, url: string): Promise<T | null> {
 
 /** Resolve a FIFA fixture (date + team names) to its FotMob match id. FotMob ids
  *  differ from FIFA's, so we match by date and both team names (order-insensitive). */
-async function findMatchId(dateEvent: string, teamA: string, teamB: string): Promise<number | null> {
+export async function findMatchId(dateEvent: string, teamA: string, teamB: string): Promise<number | null> {
   const date = dateEvent.replaceAll("-", "");
-  const resp = await getJson<FmMatchesResp>(`fotmob:/matches/${date}`, `${FOTMOB_BASE}/matches?date=${date}`);
+  const resp = await getJson<FmMatchesResp>(`fotmob:/matches/${date}`, `${FOTMOB_BASE}/matches?date=${date}`, TTL_MATCHES_LIST);
   const a = norm(teamA), b = norm(teamB);
   for (const league of resp?.leagues ?? []) {
     for (const m of league.matches ?? []) {
@@ -94,7 +130,23 @@ const toNum = (v: number | string | null | undefined): number | null => {
 export async function fotmobEval(dateEvent: string, teamName: string, oppName: string): Promise<FotmobMatchEval | null> {
   const matchId = await findMatchId(dateEvent, teamName, oppName);
   if (matchId === null) return null;
-  const details = await getJson<FmDetails>(`fotmob:/details/${matchId}`, `${FOTMOB_BASE}/matchDetails?matchId=${matchId}`);
+  // Determine if match is live or finished to use proper cache TTL (6h for finished, 1m for live/in-progress)
+  const hit = cacheGet(`fotmob:/details/${matchId}`);
+  let candidateTtl = TTL_LIVE;
+  if (hit) {
+    try {
+      const cached = JSON.parse(hit.body) as FmDetails;
+      const isFinished = cached.header?.status?.finished ?? cached.general?.matchFinished ?? false;
+      if (isFinished) candidateTtl = TTL_FINISHED;
+    } catch {
+      /* invalid cache */
+    }
+  }
+  const details = await getJson<FmDetails>(
+    `fotmob:/details/${matchId}`,
+    `${FOTMOB_BASE}/matchDetails?matchId=${matchId}`,
+    candidateTtl,
+  );
   const stats = details?.content?.playerStats;
   if (!stats) return null;
   const wanted = norm(teamName);

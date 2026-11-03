@@ -208,11 +208,13 @@ export interface OperationalEvent {
 export interface OperationalSlice {
   total: number;
   errors: number;
+  errorRate: number | null;
   cacheHits: number;
   staleFallbacks: number;
   successRate: number | null;
   latencyP50Ms: number | null;
   latencyP95Ms: number | null;
+  consecutiveErrors: number;
 }
 
 export interface OperationalSummary extends OperationalSlice {
@@ -226,16 +228,18 @@ const percentile = (values: number[], quantile: number): number | null => {
   return sorted[Math.max(0, Math.ceil(sorted.length * quantile) - 1)]!;
 };
 
-const operationSlice = (events: OperationalEvent[]): OperationalSlice => {
+const operationSlice = (events: OperationalEvent[], consecutiveErrors = 0): OperationalSlice => {
   const errors = events.filter((event) => event.outcome === "error").length;
   return {
     total: events.length,
     errors,
+    errorRate: events.length ? Number((errors / events.length).toFixed(4)) : null,
     cacheHits: events.filter((event) => event.outcome === "cache").length,
     staleFallbacks: events.filter((event) => event.outcome === "stale").length,
     successRate: events.length ? Number(((events.length - errors) / events.length).toFixed(4)) : null,
     latencyP50Ms: percentile(events.map((event) => event.latencyMs), 0.5),
     latencyP95Ms: percentile(events.map((event) => event.latencyMs), 0.95),
+    consecutiveErrors,
   };
 };
 
@@ -246,13 +250,24 @@ export function createOperationalRepository(database: Database) {
       database.query("INSERT INTO operational_events (at, subsystem, operation, outcome, latency_ms) VALUES (?, ?, ?, ?, ?)")
         .run(event.at, event.subsystem, event.operation, event.outcome, Math.max(0, Math.round(event.latencyMs)));
     },
+    consecutiveErrors(subsystem: string): number {
+      const rows = database.query("SELECT outcome FROM operational_events WHERE subsystem = ? ORDER BY id DESC LIMIT 20")
+        .all(subsystem) as { outcome: OperationalOutcome }[];
+      let count = 0;
+      for (const row of rows) {
+        if (row.outcome === "error") count++;
+        else break;
+      }
+      return count;
+    },
     summary(since: number): OperationalSummary {
       const rows = database.query("SELECT at, subsystem, operation, outcome, latency_ms FROM operational_events WHERE at >= ? ORDER BY at")
         .all(since) as { at: number; subsystem: OperationalEvent["subsystem"]; operation: string; outcome: OperationalOutcome; latency_ms: number }[];
       const events = rows.map((row): OperationalEvent => ({ ...row, latencyMs: row.latency_ms }));
       const bySubsystem: Record<string, OperationalSlice> = {};
       for (const subsystem of new Set(events.map((event) => event.subsystem))) {
-        bySubsystem[subsystem] = operationSlice(events.filter((event) => event.subsystem === subsystem));
+        const subEvents = events.filter((event) => event.subsystem === subsystem);
+        bySubsystem[subsystem] = operationSlice(subEvents, this.consecutiveErrors(subsystem));
       }
       return { since, ...operationSlice(events), bySubsystem };
     },
@@ -277,6 +292,10 @@ export function recordOperationalEvent(event: Omit<OperationalEvent, "at"> & { a
 
 export function operationalSummary(hours = 24): OperationalSummary {
   return operations().summary(Date.now() - hours * 3_600_000);
+}
+
+export function consecutiveErrors(subsystem: string): number {
+  return operations().consecutiveErrors(subsystem);
 }
 
 /** Cached raw response body for an API path, with its age in ms (null = miss). */
