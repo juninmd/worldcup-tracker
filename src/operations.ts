@@ -3,6 +3,7 @@ import { cacheSummary, consecutiveErrors, operationalSummary, type OperationalSu
 import { loadState, saveState, type State } from "./state.ts";
 import { isFinished, mergedSeasonEvents, timeline } from "./sportsdb.ts";
 import { sendMessage } from "./telegram.ts";
+import { config } from "./config.ts";
 
 const HEARTBEAT = new URL("../data/heartbeat", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 export const MONITORED_SUBSYSTEMS = ["fifa", "fotmob", "telegram"] as const;
@@ -51,7 +52,7 @@ async function deliveryAudit(): Promise<DeliveryAudit> {
 export async function runtimeStatus(windowHours = 24): Promise<RuntimeStatus> {
   const heartbeat = await stat(HEARTBEAT).catch(() => null);
   const heartbeatAgeSeconds = heartbeat ? Math.max(0, Math.round((Date.now() - heartbeat.mtimeMs) / 1000)) : null;
-  const idleInterval = Number(process.env.POLL_INTERVAL_SEC ?? "60");
+  const idleInterval = config.pollIntervalSec;
   return {
     windowHours,
     operations: operationalSummary(windowHours),

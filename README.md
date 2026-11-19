@@ -54,6 +54,7 @@ cp .env.example .env   # preencha as variáveis de ambiente
 | `TELEGRAM_BOT_TOKEN` | Token de autenticação do Bot do Telegram gerado via BotFather. | _Obrigatório para envios_ |
 | `TELEGRAM_CHAT_ID` | ID numérico do canal ou grupo do Telegram para onde as mensagens serão enviadas. | _Obrigatório para envios_ |
 | `POLL_INTERVAL_SEC` | Intervalo do loop de monitoramento contínuo em segundos quando não há jogos ao vivo. | `60` |
+| `LIVE_POLL_INTERVAL_SEC` | Intervalo do loop em segundos enquanto há jogo ao vivo (gols, cartões e VAR mais rápidos). Valores vazios, não numéricos ou ≤ 0 voltam ao padrão. | `20` |
 | `LITELLM_BASE_URL` | URL base do gateway LiteLLM para análise de partidas com IA (usado pelo comando `analysis`). | `https://litellm.antonio-code.duckdns.org/v1` |
 | `LITELLM_API_KEY` | Chave de API para autenticação no gateway LiteLLM. | _Opcional em dev_ |
 | `LITELLM_MODEL` | Identificador do modelo de linguagem a ser chamado via LiteLLM. | `cloud/gpt-oss-120b` |
