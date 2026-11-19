@@ -20,10 +20,20 @@ export function requireTelegram(
   return { token, chat };
 }
 
+/**
+ * Seconds from an env var, falling back when unset, empty, non-numeric or <= 0.
+ * `POLL_INTERVAL_SEC=` (empty) used to become 0 and `abc` NaN: `Bun.sleep` then returned at once,
+ * so the tracker hammered the FIFA API in a tight loop.
+ */
+export function positiveSeconds(raw: string | undefined, fallback: number): number {
+  const value = Number(raw?.trim() || fallback);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 export const config = {
-  pollIntervalSec: Number(process.env.POLL_INTERVAL_SEC ?? "60"),
+  pollIntervalSec: positiveSeconds(process.env.POLL_INTERVAL_SEC, 60),
   // While a match is live, poll faster to catch goals/cards/VAR sooner - bounded
   // near the FIFA timeline cache TTL (15s in sportsdb.ts) so going lower would
   // just re-request the same cached response instead of fresher data.
-  livePollIntervalSec: Number(process.env.LIVE_POLL_INTERVAL_SEC ?? "20"),
+  livePollIntervalSec: positiveSeconds(process.env.LIVE_POLL_INTERVAL_SEC, 20),
 };

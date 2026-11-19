@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { config, requireTelegram } from "../src/config.ts";
+import { config, positiveSeconds, requireTelegram } from "../src/config.ts";
 
 describe("config", () => {
   test("importing config does not require telegram secrets", () => {
@@ -21,5 +21,17 @@ describe("config", () => {
       TELEGRAM_CHAT_ID: "42",
     } as NodeJS.ProcessEnv;
     expect(requireTelegram(env)).toEqual({ token: "token", chat: "42" });
+  });
+
+  test("positiveSeconds never yields a zero or NaN sleep that would spin the poll loop", () => {
+    expect(positiveSeconds(undefined, 60)).toBe(60);
+    expect(positiveSeconds("", 60)).toBe(60);
+    expect(positiveSeconds("  ", 60)).toBe(60);
+    expect(positiveSeconds("abc", 60)).toBe(60);
+    expect(positiveSeconds("0", 60)).toBe(60);
+    expect(positiveSeconds("-5", 60)).toBe(60);
+    expect(positiveSeconds("Infinity", 60)).toBe(60);
+    expect(positiveSeconds("15", 60)).toBe(15);
+    expect(positiveSeconds("2.5", 60)).toBe(2.5);
   });
 });
