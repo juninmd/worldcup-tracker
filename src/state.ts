@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 const FILE = new URL("../data/state.json", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
@@ -16,21 +16,28 @@ export interface State {
   activeSubsystemIncidents?: string[]; // subsystems with active >= 5 consecutive error incidents
 }
 
-const empty: State = {
+// Factory, not a shared object: callers push into these arrays, which would leak into later loads.
+const empty = (): State => ({
   postedGoals: [], prematchPosted: [], fulltimePosted: [], postedSubs: [], postedVar: [], postedUpcomingAlert: [],
   postedCards: [], postedAnalysis: [], activeSubsystemIncidents: [],
-};
+});
 
-export async function loadState(): Promise<State> {
-  if (!existsSync(FILE)) return { ...empty };
+export async function loadState(file = FILE): Promise<State> {
+  if (!existsSync(file)) return empty();
   try {
-    return { ...empty, ...JSON.parse(await readFile(FILE, "utf8")) };
-  } catch {
-    return { ...empty };
+    return { ...empty(), ...JSON.parse(await readFile(file, "utf8")) };
+  } catch (err) {
+    // An unreadable state means every dedup list resets and past alerts re-post; keep the evidence.
+    console.error(`state: ${file} unreadable (${(err as Error).message}); starting empty`);
+    await rename(file, `${file}.corrupt`).catch(() => {});
+    return empty();
   }
 }
 
-export async function saveState(s: State): Promise<void> {
-  await mkdir(dirname(FILE), { recursive: true });
-  await writeFile(FILE, JSON.stringify(s, null, 2));
+// Write-then-rename: a crash mid-write must never leave a truncated state.json behind.
+export async function saveState(s: State, file = FILE): Promise<void> {
+  await mkdir(dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  await writeFile(tmp, JSON.stringify(s, null, 2));
+  await rename(tmp, file);
 }
