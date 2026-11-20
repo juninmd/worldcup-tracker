@@ -70,7 +70,7 @@ switch (cmd) {
   case "predict": {
     const { all, table } = await ratingsNow();
     const [home, away] = [rest[0], rest[1]];
-    if (!home || !away) { console.error("usage: predict <Home> <Away>"); break; }
+    if (!home || !away) { console.error("usage: predict <Home> <Away>"); process.exitCode = 1; break; }
     console.log(predictMatch(table, home, away, all));
     break;
   }
@@ -88,10 +88,10 @@ switch (cmd) {
   case "squad":
   case "elenco": {
     const q = rest.filter((r) => r !== "--send").join(" ");
-    if (!q) { console.error("usage: squad <team> [--send]"); break; }
+    if (!q) { console.error("usage: squad <team> [--send]"); process.exitCode = 1; break; }
     if (rest.includes("--send")) { await postSquad(q); console.log("Squad sent."); break; }
     const team = await findTeamId(q);
-    if (!team) { console.error(`no team matching "${q}"`); break; }
+    if (!team) { console.error(`no team matching "${q}"`); process.exitCode = 1; break; }
     console.log(fmtSquad(team.name, await squadPlayers(team.id)));
     break;
   }
@@ -123,7 +123,7 @@ switch (cmd) {
   case "confronto": {
     const send = rest.includes("--send");
     const [a, b] = rest.filter((r) => r !== "--send");
-    if (!a || !b) { console.error("usage: h2h <TeamA> <TeamB> [--send]"); break; }
+    if (!a || !b) { console.error("usage: h2h <TeamA> <TeamB> [--send]"); process.exitCode = 1; break; }
     if (send) { await postHeadToHead(a, b); console.log("H2H sent."); break; }
     console.log(fmtHeadToHead(await headToHead(a, b), a, b));
     break;
@@ -149,7 +149,7 @@ switch (cmd) {
   case "details": {
     const q = (rest[0] ?? "").toLowerCase();
     const e = (await mergedSeasonEvents()).find((x) => x.strEvent.toLowerCase().includes(q));
-    if (!e) { console.error(`no event matching "${rest[0]}"`); break; }
+    if (!e) { console.error(`no event matching "${rest[0]}"`); process.exitCode = 1; break; }
     await postDetails(e);
     console.log(`Details sent: ${e.strEvent}`);
     break;
@@ -164,7 +164,7 @@ switch (cmd) {
     const send = rest[rest.length - 1] === "--send";
     const q = (send ? rest.slice(0, -1) : rest).join(" ").toLowerCase();
     const e = (await mergedSeasonEvents()).find((x) => x.strEvent.toLowerCase().includes(q));
-    if (!e) { console.error(`no event matching "${q}"`); break; }
+    if (!e) { console.error(`no event matching "${q}"`); process.exitCode = 1; break; }
     if (send) {
       await postMatchAnalysis(e);
       console.log(`Analysis sent: ${e.strEvent}`);
@@ -210,7 +210,7 @@ switch (cmd) {
     const projection = await tournamentProjection();
     const { all, table } = await ratingsNow();
     const sim = simulateKnockout(projection, table, all);
-    if (!sim) { console.error("no knockout bracket to evaluate"); break; }
+    if (!sim) { console.error("no knockout bracket to evaluate"); process.exitCode = 1; break; }
     if (rest[0] === "--send") { await postBracketOracle(projection, sim); console.log("Oracle sent."); break; }
     console.log(fmtBracketOracle(await bracketOracle(projection, sim)));
     break;
