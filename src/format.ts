@@ -66,12 +66,18 @@ export function kickoff(e: WcEvent): string {
   return d ? `${BRT(d)} (BRT)` : e.dateEvent;
 }
 
-/** Wall-clock time a goal happened: kickoff + match minute, in BRT. */
+const HALF_TIME_BREAK_MIN = 15;
+const EXTRA_TIME_BREAK_MIN = 5;
+
+/** Wall-clock time a goal happened: kickoff + minute ("67" or "45+2") + the breaks already played, in BRT. */
 function goalClock(e: WcEvent, minute: string): string {
   const d = parseUtc(e.strTimestamp);
-  const min = Number(minute);
-  if (!d || Number.isNaN(min)) return "";
-  return BRT(new Date(d.getTime() + min * 60_000));
+  const m = /^(\d+)(?:\s*\+\s*(\d+))?$/.exec(minute.trim());
+  if (!d || !m) return "";
+  const base = Number(m[1]);
+  const breaks = (base > 45 ? HALF_TIME_BREAK_MIN : 0) + (base > 90 ? EXTRA_TIME_BREAK_MIN : 0);
+  const elapsed = base + Number(m[2] ?? 0) + breaks;
+  return BRT(new Date(d.getTime() + elapsed * 60_000));
 }
 
 const googleLink = (name: string) =>
