@@ -9,6 +9,7 @@ import type { LineupPlayer, TimelineItem, WcEvent } from "./types.ts";
 import { canonicalTeam, fifaRank, trainRatings } from "./elo.ts";
 import { simulateKnockout } from "./simulate.ts";
 import { buildLeakFreeBacktest, evaluatePredictions } from "./metrics.ts";
+import { compareMinute } from "./minute.ts";
 
 export interface HomologationResult {
   groups: number;
@@ -116,7 +117,7 @@ export async function homologateTelegramDryRun(): Promise<TelegramDryRunResult> 
   const match = live[0] ?? events.filter(isFinished)
     .sort((a, b) => (b.strTimestamp ?? b.dateEvent).localeCompare(a.strTimestamp ?? a.dateEvent))[0] ?? null;
   const players = match ? await lineup(match.idEvent) : [];
-  const goals = match ? onlyGoals(await timeline(match.idEvent)).sort((a, b) => Number(a.intTime) - Number(b.intTime)) : [];
+  const goals = match ? onlyGoals(await timeline(match.idEvent)).sort((a, b) => compareMinute(a.intTime, b.intTime)) : [];
   const starters = players.filter((p) => (p.strSubstitute ?? "").toLowerCase() !== "yes");
   const photos = players.map((p) => p.strThumb).filter((x): x is string => !!x);
   const text = match ? lineupText(match, players) : "";
