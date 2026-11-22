@@ -20,7 +20,11 @@ export async function topScorers(): Promise<Scorer[]> {
   const tally = new Map<string, Scorer>();
 
   for (const e of played) {
-    const goals = await timeline(e.idEvent);
+    // One match's timeline outage must not wipe the whole table (and the daily menu with it).
+    const goals = await timeline(e.idEvent).catch((err: Error) => {
+      console.error(`scorers: timeline ${e.idEvent} failed:`, err.message);
+      return [];
+    });
     for (const g of goals) {
       if (!isGoal(g) || !g.strPlayer) continue;
       const team = g.strTeam ?? "";

@@ -5,7 +5,9 @@ const mockEvents = [
     idEvent: "event1",
     strHomeTeam: "Brazil",
     strAwayTeam: "Argentina",
-  }
+  },
+  // Timeline endpoint 404s for this one (FIFA error, no cache to fall back on).
+  { idEvent: "event404", strHomeTeam: "Japan", strAwayTeam: "Ghana" },
 ];
 
 const mockTimeline = [
@@ -41,7 +43,10 @@ const mockTimeline = [
 
 mock.module("../src/sportsdb.ts", () => ({
   seasonEvents: () => Promise.resolve(mockEvents),
-  timeline: () => Promise.resolve(mockTimeline),
+  mergedSeasonEvents: () => Promise.resolve(mockEvents),
+  timeline: (id: string) => id === "event404"
+    ? Promise.reject(new Error("FIFA 404 on /timelines/event404"))
+    : Promise.resolve(mockTimeline),
   isFinished: () => true,
   isLive: () => false,
   findPlayer: () => Promise.resolve(null),
@@ -67,4 +72,9 @@ test("topScorers: tallies correctly and filters out own goals / disallowed goals
   // Otamendi should NOT be in the scorers list at all because it was an own goal!
   const otamendi = list.find((s) => s.player === "Otamendi");
   expect(otamendi).toBeUndefined();
+});
+
+test("topScorers: one match's timeline failure skips that match instead of failing the table", async () => {
+  const list = await topScorers();
+  expect(list.map((s) => s.player)).toEqual(["Messi", "Neymar"]);
 });
