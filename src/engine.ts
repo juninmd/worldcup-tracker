@@ -4,7 +4,7 @@ import { trainRatings, outcomeOf } from "./elo.ts";
 import { calibrateGoals, predictMatch } from "./predict.ts";
 import { bracketAwareChampionForecast, championForecast } from "./champion.ts";
 import { fmtBrazilFriendlies, fmtDailyMenu, fmtFulltime, fmtGoalCaption, fmtPrematch, flag, kickoff, nextWorldCupLine, parseUtc } from "./format.ts";
-import { sendMediaGroup, sendMessage, sendPhoto, sendPhotoStrict } from "./telegram.ts";
+import { sendMediaGroup, sendMessage, sendPhoto } from "./telegram.ts";
 import { loadState, saveState } from "./state.ts";
 import { config } from "./config.ts";
 import { topScorers } from "./scorers.ts";
@@ -303,7 +303,9 @@ async function announceGoal(e: WcEvent, g: TimelineItem, score: string): Promise
   const pl = g.idPlayer ? await findPlayerById(g.idPlayer) : g.strPlayer ? await findPlayer(g.strPlayer) : null;
   const img = pl?.strCutout || pl?.strThumb;
   if (!img) return false;
-  await sendPhotoStrict(img, fmtGoalCaption(g, e, pl, score));
+  // sendPhoto falls back to text when Telegram rejects the image URL; a strict send
+  // would throw on every poll and the goal would never be announced.
+  await sendPhoto(img, fmtGoalCaption(g, e, pl, score));
   return true;
 }
 
@@ -446,6 +448,28 @@ async function checkUpcomingAlerts(all: WcEvent[], state: Awaited<ReturnType<typ
   }
 }
 
+async function pollMatch(e: WcEvent, state: Awaited<ReturnType<typeof loadState>>): Promise<void> {
+  if (isLive(e)) {
+    if (!state.prematchPosted.includes(e.idEvent)) {
+      await postPrematch(e);
+      state.prematchPosted.push(e.idEvent);
+      await saveState(state);
+    }
+    await catchUpGoals(e, state);
+    await catchUpMatchEvents(e, state);
+    await catchUpCards(e, state);
+  }
+  if (isFinished(e) && !state.fulltimePosted.includes(e.idEvent)) {
+    if (state.prematchPosted.includes(e.idEvent)) {
+      await catchUpGoals(e, state); // flush late goals before the FT summary
+      await catchUpCards(e, state); // flush any card issued in the closing minutes
+      await postFulltime(e, state);
+      state.fulltimePosted.push(e.idEvent);
+      await saveState(state);
+    }
+  }
+}
+
 /** One polling pass over live matches: prematch, goals, full-time. */
 export async function pollOnce(): Promise<number> {
   const state = await loadState();
@@ -456,25 +480,12 @@ export async function pollOnce(): Promise<number> {
   await checkSourceHealthAlerts(state, true);
 
   for (const e of all) {
-    if (isLive(e)) {
-      live++;
-      if (!state.prematchPosted.includes(e.idEvent)) {
-        await postPrematch(e);
-        state.prematchPosted.push(e.idEvent);
-        await saveState(state);
-      }
-      await catchUpGoals(e, state);
-      await catchUpMatchEvents(e, state);
-      await catchUpCards(e, state);
-    }
-    if (isFinished(e) && !state.fulltimePosted.includes(e.idEvent)) {
-      if (state.prematchPosted.includes(e.idEvent)) {
-        await catchUpGoals(e, state); // flush late goals before the FT summary
-        await catchUpCards(e, state); // flush any card issued in the closing minutes
-        await postFulltime(e, state);
-        state.fulltimePosted.push(e.idEvent);
-        await saveState(state);
-      }
+    if (isLive(e)) live++;
+    // One broken match (timeline 404, rejected media) must not freeze the others.
+    try {
+      await pollMatch(e, state);
+    } catch (err) {
+      console.error(`poll ${e.idEvent} failed:`, (err as Error).message);
     }
   }
   return live;
