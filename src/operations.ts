@@ -4,8 +4,9 @@ import { loadState, saveState, type State } from "./state.ts";
 import { isFinished, mergedSeasonEvents, timeline } from "./sportsdb.ts";
 import { sendMessage } from "./telegram.ts";
 import { config } from "./config.ts";
+import { dataPath } from "./paths.ts";
 
-const HEARTBEAT = new URL("../data/heartbeat", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const HEARTBEAT = dataPath("heartbeat");
 export const MONITORED_SUBSYSTEMS = ["fifa", "fotmob", "telegram"] as const;
 export const CONSECUTIVE_ERROR_ALERT_THRESHOLD = 5;
 

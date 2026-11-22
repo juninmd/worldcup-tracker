@@ -44,8 +44,9 @@ import {
 import type { ChampionOdds } from "./champion.ts";
 import { predictionFromSnapshot, predictionSnapshot, recordOperationalEvent, savePredictionSnapshot, settlePredictionSnapshot } from "./db.ts";
 import { compareMinute } from "./minute.ts";
+import { dataPath } from "./paths.ts";
 
-const HEARTBEAT = new URL("../data/heartbeat", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const HEARTBEAT = dataPath("heartbeat");
 
 export async function ratingsNow() {
   const all = await mergedSeasonEvents();

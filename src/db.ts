@@ -4,11 +4,12 @@ import { dirname } from "node:path";
 import { MODEL_VERSION } from "./elo.ts";
 import type { EvaluatedPrediction } from "./metrics.ts";
 import type { Prediction, WcEvent } from "./types.ts";
+import { dataPath } from "./paths.ts";
 
 // Lives on the same PVC as state.json (/app/data in the cluster), so the cache
 // survives pod restarts — the app can serve last-known data without hitting the
 // rate-limited free API on every boot.
-const FILE = new URL("../data/wc.db", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const FILE = dataPath("wc.db");
 
 let _db: Database | null = null;
 function ensureSchema(d: Database): void {
