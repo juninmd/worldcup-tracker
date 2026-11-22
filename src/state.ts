@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { dataPath } from "./paths.ts";
 
-const FILE = new URL("../data/state.json", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const FILE = dataPath("state.json");
 
 export interface State {
   postedGoals: string[]; // `${idEvent}:${side}:${ordinal}`
