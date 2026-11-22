@@ -43,7 +43,20 @@ const PLAYER_QUALITY: Record<string, number> = {
   "Cape Verde": 9, Iraq: 8, Jordan: 7, "DR Congo": 12, Uzbekistan: 8,
 };
 
+// Pure and called per sampled match in the Monte Carlo (hundreds of thousands of
+// times per projection): cache by input; the key space is the handful of team names.
+const canonicalCache = new Map<string, string>();
+
 export function canonicalTeam(name: string): string {
+  let out = canonicalCache.get(name);
+  if (out === undefined) {
+    out = canonicalize(name);
+    canonicalCache.set(name, out);
+  }
+  return out;
+}
+
+function canonicalize(name: string): string {
   return name
     .replace(/^(USA|United States).*/i, "USA")
     .replace(/^South Korea$/i, "Korea Republic")
