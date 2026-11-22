@@ -3,6 +3,7 @@ import type { ChampionOdds } from "./champion.ts";
 import type { ProjectedMatch } from "./tournament.ts";
 import type { Scorer } from "./scorers.ts";
 import { canonicalTeam, FIFA_RANK_AS_OF, MODEL_VERSION } from "./elo.ts";
+import { parseMinute } from "./minute.ts";
 
 const FLAGS: Record<string, string> = {
   Brazil: "🇧🇷", Argentina: "🇦🇷", France: "🇫🇷", Spain: "🇪🇸", England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
@@ -72,11 +73,10 @@ const EXTRA_TIME_BREAK_MIN = 5;
 /** Wall-clock time a goal happened: kickoff + minute ("67" or "45+2") + the breaks already played, in BRT. */
 function goalClock(e: WcEvent, minute: string): string {
   const d = parseUtc(e.strTimestamp);
-  const m = /^(\d+)(?:\s*\+\s*(\d+))?$/.exec(minute.trim());
+  const m = parseMinute(minute);
   if (!d || !m) return "";
-  const base = Number(m[1]);
-  const breaks = (base > 45 ? HALF_TIME_BREAK_MIN : 0) + (base > 90 ? EXTRA_TIME_BREAK_MIN : 0);
-  const elapsed = base + Number(m[2] ?? 0) + breaks;
+  const breaks = (m.base > 45 ? HALF_TIME_BREAK_MIN : 0) + (m.base > 90 ? EXTRA_TIME_BREAK_MIN : 0);
+  const elapsed = m.base + m.added + breaks;
   return BRT(new Date(d.getTime() + elapsed * 60_000));
 }
 

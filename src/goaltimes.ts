@@ -1,4 +1,5 @@
 import { isFinished, isLive, mergedSeasonEvents, timeline } from "./sportsdb.ts";
+import { parseMinute } from "./minute.ts";
 import { sendMessage } from "./telegram.ts";
 
 const isGoal = (tl: { strTimeline: string; strTimelineDetail: string | null }) =>
@@ -6,6 +7,13 @@ const isGoal = (tl: { strTimeline: string; strTimelineDetail: string | null }) =
 
 const BUCKETS = ["1-15", "16-30", "31-45", "45+", "46-60", "61-75", "76-90", "90+"] as const;
 export type Bucket = typeof BUCKETS[number];
+
+/** Bucket of a goal minute ("67", "45+2"); stoppage time goes to "45+" / "90+". */
+export function bucketOfMinute(raw: string): Bucket {
+  const p = parseMinute(raw) ?? { base: 0, added: 0 };
+  if (p.added > 0) return p.base <= 45 ? "45+" : "90+";
+  return bucketOf(p.base, p.base <= 45);
+}
 
 function bucketOf(minute: number, isFirstHalf: boolean): Bucket {
   if (isFirstHalf) {
@@ -25,15 +33,12 @@ export async function goalTimeDistribution(): Promise<Record<Bucket, number>> {
   const all = await mergedSeasonEvents();
   const played = all.filter((e) => isFinished(e) || isLive(e));
   const tally = Object.fromEntries(BUCKETS.map((b) => [b, 0])) as Record<Bucket, number>;
-  let firstHalf = true;
 
   for (const e of played) {
     const goals = await timeline(e.idEvent);
     for (const g of goals) {
       if (!isGoal(g)) continue;
-      const minute = Number(g.intTime) || 0;
-      firstHalf = minute <= 45;
-      tally[bucketOf(minute, firstHalf)]++;
+      tally[bucketOfMinute(g.intTime)]++;
     }
   }
   return tally;

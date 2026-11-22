@@ -43,6 +43,7 @@ import {
 } from "./charts.ts";
 import type { ChampionOdds } from "./champion.ts";
 import { predictionFromSnapshot, predictionSnapshot, recordOperationalEvent, savePredictionSnapshot, settlePredictionSnapshot } from "./db.ts";
+import { compareMinute } from "./minute.ts";
 
 const HEARTBEAT = new URL("../data/heartbeat", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
@@ -355,7 +356,7 @@ async function trackedEvents(): Promise<WcEvent[]> {
 async function catchUpGoals(e: WcEvent, state: Awaited<ReturnType<typeof loadState>>): Promise<void> {
   const ev = (await eventDetail(e.idEvent)) ?? e;
   let goals = onlyGoals(await timeline(e.idEvent))
-    .sort((a, b) => Number(a.intTime) - Number(b.intTime));
+    .sort((a, b) => compareMinute(a.intTime, b.intTime));
 
   const isHome = (g: TimelineItem) => g.strHome === "yes" || g.strTeam === ev.strHomeTeam;
   let h = 0, a = 0, hi = 0, ai = 0;
@@ -530,7 +531,7 @@ export async function replayDate(date: string): Promise<void> {
     if (xi) { await sendMessage(xi); await Bun.sleep(1200); }
 
     let goals = onlyGoals(await timeline(e.idEvent))
-      .sort((a, b) => Number(a.intTime) - Number(b.intTime));
+      .sort((a, b) => compareMinute(a.intTime, b.intTime));
     let h = 0, a = 0;
     for (const g of goals) {
       const home = g.strHome === "yes" || g.strTeam === e.strHomeTeam;

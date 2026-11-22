@@ -1,6 +1,7 @@
 import { canonicalTeam } from "./elo.ts";
 import { cardEvents, eventStats, isFinished, lineup, matchIncidents, mergedSeasonEvents, shotEvents, timeline, type ShotEvent } from "./sportsdb.ts";
 import type { CardEvent, TimelineItem, WcEvent } from "./types.ts";
+import { compareMinute } from "./minute.ts";
 
 export interface BrazilMatchMetricInput {
   event: WcEvent;
@@ -66,7 +67,7 @@ function addStateMinutes(input: BrazilMatchMetricInput, result: BrazilMetrics): 
   const [actualFor, actualAgainst] = scoreFromBrazil(input.event);
   const goals = input.goals
     .filter((goal) => /goal/i.test(goal.strTimeline) && !/missed|disallow/i.test(goal.strTimelineDetail ?? ""))
-    .sort((a, b) => Number(a.intTime) - Number(b.intTime));
+    .sort((a, b) => compareMinute(a.intTime, b.intTime));
   if (goals.length < actualFor + actualAgainst) return;
   result.timelineCoverage++;
   let last = 0, own = 0, opponent = 0;
